@@ -53,6 +53,19 @@ it('sends message to stdout', function (): void {
     ob_end_clean();
 });
 
+it('sends a notification to stdout', function (): void {
+    $transport = new StdioTransport('test-session');
+
+    // fwrite to STDOUT cannot be captured here; assert it does not throw —
+    // unlike sendRequest(), a notification never blocks reading STDIN.
+    try {
+        @$transport->sendNotification('{"jsonrpc":"2.0","method":"notifications/message","params":{}}');
+        expect(true)->toBeTrue();
+    } catch (Exception) {
+        expect(false)->toBeTrue('sendNotification() should not throw an exception');
+    }
+});
+
 it('executes stream callback', function (): void {
     $transport = new StdioTransport('test-session');
 

@@ -49,4 +49,9 @@ class ArrayTransport implements Transport
     {
         throw new LogicException('Not implemented.');
     }
+
+    public function sendNotification(string $message): void
+    {
+        $this->sent[] = $message;
+    }
 }

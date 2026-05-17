@@ -27,6 +27,11 @@ class FakeTransporter implements Transport
      */
     protected array $sentMessages = [];
 
+    /**
+     * @var array<int, string>
+     */
+    protected array $sentNotifications = [];
+
     public function onReceive(Closure $handler): void
     {
         //
@@ -81,6 +86,11 @@ class FakeTransporter implements Transport
         return (string) json_encode($response);
     }
 
+    public function sendNotification(string $message): void
+    {
+        $this->sentNotifications[] = $message;
+    }
+
     /**
      * @return array<int, array<string, mixed>>
      */
@@ -95,5 +105,13 @@ class FakeTransporter implements Transport
     public function sentMessages(): array
     {
         return $this->sentMessages;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function sentNotifications(): array
+    {
+        return $this->sentNotifications;
     }
 }

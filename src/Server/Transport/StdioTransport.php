@@ -83,4 +83,9 @@ class StdioTransport implements Transport
             stream_set_blocking(STDIN, $wasBlocking);
         }
     }
+
+    public function sendNotification(string $message): void
+    {
+        fwrite(STDOUT, $message.PHP_EOL);
+    }
 }

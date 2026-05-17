@@ -25,4 +25,11 @@ interface Transport
      * @throws JsonRpcException
      */
     public function sendRequest(string $message): string;
+
+    /**
+     * Send a JSON-RPC notification to the client. Fire-and-forget — no id, no response.
+     *
+     * @throws JsonRpcException
+     */
+    public function sendNotification(string $message): void;
 }

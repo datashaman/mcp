@@ -176,6 +176,15 @@ class HttpTransport implements Transport
         throw new JsonRpcException('Request to client timed out.', -32603);
     }
 
+    public function sendNotification(string $message): void
+    {
+        if (! $this->streamingResponse) {
+            throw new JsonRpcException('A server-to-client notification requires a text/event-stream response. Send the triggering request with Accept: text/event-stream.', -32603);
+        }
+
+        $this->sendStreamMessage($message);
+    }
+
     /**
      * @return array<string, string>
      */

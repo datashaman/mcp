@@ -1,7 +1,31 @@
 <?php
 
 use Illuminate\Testing\TestResponse;
+use Laravel\Mcp\Exceptions\JsonRpcException;
 use Laravel\Mcp\Server\Transport\HttpTransport;
+
+it('emits a server-initiated notification over the event stream', function (): void {
+    $transport = new HttpTransport(request(), 'test-session', streamingResponse: true);
+
+    $notification = '{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info"}}';
+
+    // sendNotification() writes straight to the SSE stream via sendStreamMessage(),
+    // which ob_flush()es one buffer level down — capture with a nested buffer.
+    ob_start();
+    ob_start();
+    $transport->sendNotification($notification);
+    ob_end_flush();
+    $content = ob_get_clean();
+
+    expect($content)->toBe("data: {$notification}\n\n");
+});
+
+it('throws when sending a notification without a streaming response', function (): void {
+    $transport = new HttpTransport(request(), 'test-session');
+
+    expect(fn () => $transport->sendNotification('{"jsonrpc":"2.0","method":"notifications/message","params":{}}'))
+        ->toThrow(JsonRpcException::class);
+});
 
 it('streams iterable responses returned from the stream callback', function (): void {
     $transport = new HttpTransport(request(), 'test-session');

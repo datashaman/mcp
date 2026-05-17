@@ -32,6 +32,7 @@ use Laravel\Mcp\Server\ServerContext;
 use Laravel\Mcp\Server\Testing\PendingTestResponse;
 use Laravel\Mcp\Server\Testing\TestResponse;
 use Laravel\Mcp\Server\Tool;
+use Laravel\Mcp\Server\Transport\HttpTransport;
 use Laravel\Mcp\Transport\JsonRpcNotification;
 use Laravel\Mcp\Transport\JsonRpcRequest;
 use Laravel\Mcp\Transport\JsonRpcResponse;
@@ -97,6 +98,18 @@ abstract class Server
      * @var array<int, Prompt|class-string<Prompt>>
      */
     protected array $prompts = [];
+
+    /**
+     * Capabilities declared by the connected client during initialization.
+     *
+     * @var array<string, mixed>
+     */
+    protected array $clientCapabilities = [];
+
+    /**
+     * Protocol version negotiated with the connected client.
+     */
+    protected ?string $protocolVersion = null;
 
     public int $maxPaginationLength = 50;
 
@@ -181,6 +194,17 @@ abstract class Server
 
             if (json_last_error() !== JSON_ERROR_NONE) {
                 throw new JsonRpcException('Parse error: Invalid JSON was received by the server.', -32700);
+            }
+
+            // Route client responses to a server-initiated request into the cache so a
+            // blocked HttpTransport::sendRequest() poll on another process can pick them up.
+            // Only HTTP needs this: stdio's sendRequest() reads the reply from STDIN directly.
+            if ($this->transport instanceof HttpTransport && is_array($jsonRequest) && $this->isJsonRpcResponse($jsonRequest)) {
+                $sessionId = $this->transport->sessionId();
+                $cacheKey = "mcp:response:{$sessionId}:{$jsonRequest['id']}";
+                Container::getInstance()->make('cache')->put($cacheKey, $rawMessage, 120);
+
+                return;
             }
 
             $request = isset($jsonRequest['id'])
@@ -298,6 +322,13 @@ abstract class Server
 
         $sessionId = $this->generateSessionId();
 
+        $this->clientCapabilities = $request->params['capabilities'] ?? [];
+        $this->protocolVersion = $response->toArray()['result']['protocolVersion'] ?? null;
+
+        if ($this->transport instanceof HttpTransport && $this->clientCapabilities !== []) {
+            $this->storeHttpSessionState($sessionId);
+        }
+
         Container::getInstance()->make('events')->dispatch(new SessionInitialized(
             sessionId: $sessionId,
             clientInfo: $request->params['clientInfo'] ?? null,
@@ -306,6 +337,128 @@ abstract class Server
         ));
 
         $this->transport->send($response->toJson(), $sessionId);
+    }
+
+    /**
+     * Determine whether a decoded JSON-RPC message is a response (result or error)
+     * rather than a request or notification.
+     *
+     * @param  array<string, mixed>  $message
+     */
+    protected function isJsonRpcResponse(array $message): bool
+    {
+        return isset($message['id'])
+            && array_key_exists('method', $message) === false
+            && (array_key_exists('result', $message) || array_key_exists('error', $message));
+    }
+
+    /**
+     * Resolve the connected client's capabilities, falling back to the HTTP session cache
+     * for stateless requests that occur after initialization.
+     *
+     * @return array<string, mixed>
+     */
+    protected function resolveClientCapabilities(): array
+    {
+        $sessionId = $this->transport->sessionId();
+
+        if ($this->transport instanceof HttpTransport && $sessionId !== null) {
+            try {
+                $capabilities = Container::getInstance()->make('cache')->get($this->clientCapabilitiesCacheKey($sessionId));
+            } catch (Throwable) {
+                return $this->clientCapabilities;
+            }
+
+            if (is_array($capabilities)) {
+                return $capabilities;
+            }
+        }
+
+        return $this->clientCapabilities;
+    }
+
+    /**
+     * Resolve the protocol version negotiated with the connected client.
+     *
+     * @throws JsonRpcException
+     */
+    protected function resolveProtocolVersion(ServerContext $context): string
+    {
+        if ($this->transport instanceof HttpTransport) {
+            $protocolVersion = $this->transport->protocolVersion();
+
+            if ($protocolVersion !== null) {
+                if (! in_array($protocolVersion, $context->supportedProtocolVersions, true)) {
+                    throw new JsonRpcException(
+                        message: 'Unsupported protocol version',
+                        code: -32602,
+                        data: [
+                            'supported' => $context->supportedProtocolVersions,
+                            'requested' => $protocolVersion,
+                        ],
+                    );
+                }
+
+                return $protocolVersion;
+            }
+
+            $sessionId = $this->transport->sessionId();
+
+            if ($sessionId !== null && $sessionId !== '') {
+                try {
+                    $protocolVersion = Container::getInstance()->make('cache')->get($this->protocolVersionCacheKey($sessionId));
+                } catch (Throwable) {
+                    $protocolVersion = null;
+                }
+
+                if (is_string($protocolVersion) && in_array($protocolVersion, $context->supportedProtocolVersions, true)) {
+                    return $protocolVersion;
+                }
+            }
+
+            return ProtocolVersion::V2025_03_26->value;
+        }
+
+        return $this->protocolVersion ?? $context->supportedProtocolVersions[0];
+    }
+
+    /**
+     * Persist the negotiated client capabilities and protocol version so subsequent
+     * stateless HTTP requests can resolve them.
+     */
+    protected function storeHttpSessionState(string $sessionId): void
+    {
+        $cache = Container::getInstance()->make('cache');
+        $ttl = $this->httpSessionTtl();
+
+        if ($this->clientCapabilities !== []) {
+            $cache->put($this->clientCapabilitiesCacheKey($sessionId), $this->clientCapabilities, $ttl);
+        }
+
+        if ($this->protocolVersion !== null) {
+            $cache->put($this->protocolVersionCacheKey($sessionId), $this->protocolVersion, $ttl);
+        }
+    }
+
+    protected function httpSessionTtl(): int
+    {
+        $ttl = Container::getInstance()->make('config')->get('mcp.http_session_ttl', 3600);
+
+        if (! is_int($ttl)) {
+            return 3600;
+        }
+
+        return max($ttl, 121);
+    }
+
+    protected function clientCapabilitiesCacheKey(string $sessionId): string
+    {
+        return "mcp:session:{$sessionId}:clientCapabilities";
+    }
+
+    protected function protocolVersionCacheKey(string $sessionId): string
+    {
+        return "mcp:session:{$sessionId}:protocolVersion";
     }
 
     protected function generateSessionId(): string

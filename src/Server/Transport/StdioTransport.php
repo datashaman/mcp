@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Laravel\Mcp\Server\Transport;
 
 use Closure;
+use Laravel\Mcp\Exceptions\JsonRpcException;
 use Laravel\Mcp\Server\Contracts\Transport;
 
 class StdioTransport implements Transport
@@ -54,5 +55,32 @@ class StdioTransport implements Transport
     public function stream(Closure $stream): void
     {
         $stream();
+    }
+
+    public function sendRequest(string $message): string
+    {
+        fwrite(STDOUT, $message.PHP_EOL);
+
+        $wasBlocking = stream_get_meta_data(STDIN)['blocked'];
+        stream_set_blocking(STDIN, true);
+        stream_set_timeout(STDIN, 30);
+
+        try {
+            $response = fgets(STDIN);
+
+            if ($response === false) {
+                $meta = stream_get_meta_data(STDIN);
+
+                if ($meta['timed_out']) {
+                    throw new JsonRpcException('Request to client timed out.', -32603);
+                }
+
+                throw new JsonRpcException('Failed to read response from client.', -32603);
+            }
+
+            return trim($response);
+        } finally {
+            stream_set_blocking(STDIN, $wasBlocking);
+        }
     }
 }

@@ -13,6 +13,7 @@ use Laravel\Mcp\Server\AppResource;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\Name;
 use Laravel\Mcp\Server\Attributes\Version;
+use Laravel\Mcp\Server\ClientRequest;
 use Laravel\Mcp\Server\Concerns\ReadsAttributes;
 use Laravel\Mcp\Server\Contracts\Method;
 use Laravel\Mcp\Server\Contracts\Transport;
@@ -29,6 +30,7 @@ use Laravel\Mcp\Server\Methods\ReadResource;
 use Laravel\Mcp\Server\Prompt;
 use Laravel\Mcp\Server\Resource;
 use Laravel\Mcp\Server\ServerContext;
+use Laravel\Mcp\Server\ServerNotification;
 use Laravel\Mcp\Server\Testing\PendingTestResponse;
 use Laravel\Mcp\Server\Testing\TestResponse;
 use Laravel\Mcp\Server\Tool;
@@ -350,6 +352,43 @@ abstract class Server
         return isset($message['id'])
             && array_key_exists('method', $message) === false
             && (array_key_exists('result', $message) || array_key_exists('error', $message));
+    }
+
+    /**
+     * Create a server-initiated request bound to the connected client.
+     *
+     * Wires the transport together with the capabilities and protocol version
+     * negotiated during initialization, so the request can gate itself with
+     * {@see ClientRequest::ensureClientCapability()} and
+     * {@see ClientRequest::ensureProtocolSupports()}.
+     *
+     * @template TRequest of ClientRequest
+     *
+     * @param  class-string<TRequest>  $class
+     * @return TRequest
+     *
+     * @throws JsonRpcException
+     */
+    protected function clientRequest(string $class): ClientRequest
+    {
+        return new $class(
+            $this->transport,
+            $this->resolveClientCapabilities(),
+            $this->resolveProtocolVersion($this->createContext()),
+        );
+    }
+
+    /**
+     * Create a server-initiated notification bound to the connected client.
+     *
+     * @template TNotification of ServerNotification
+     *
+     * @param  class-string<TNotification>  $class
+     * @return TNotification
+     */
+    protected function serverNotification(string $class): ServerNotification
+    {
+        return new $class($this->transport);
     }
 
     /**

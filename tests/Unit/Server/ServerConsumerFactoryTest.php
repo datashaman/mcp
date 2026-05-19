@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Laravel\Mcp\Server\ClientRequest;
 use Laravel\Mcp\Server\Notifications\ProgressNotification;
+use Laravel\Mcp\Server\Roots\Roots;
 use Laravel\Mcp\Server\ServerNotification;
 use Laravel\Mcp\Server\Transport\FakeTransporter;
 use Tests\Fixtures\ExampleServer;
@@ -49,4 +50,21 @@ it('builds a server notification wired to the transport', function (): void {
 
     expect($sent['method'])->toBe('notifications/progress')
         ->and($sent['params']['progress'])->toBe(50);
+});
+
+it('builds a roots client request wired to client capabilities', function (): void {
+    $transport = new FakeTransporter;
+    $transport->expectResponse([
+        'roots' => [
+            ['uri' => 'file:///workspace'],
+        ],
+    ]);
+
+    $server = new ExampleServer($transport);
+
+    (fn (): array => $this->clientCapabilities = ['roots' => []])->call($server);
+
+    $roots = (fn (): Roots => $this->clientRequest(Roots::class))->call($server);
+
+    expect($roots->list()[0]->uri)->toBe('file:///workspace');
 });

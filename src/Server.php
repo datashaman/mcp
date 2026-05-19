@@ -29,6 +29,7 @@ use Laravel\Mcp\Server\Methods\Ping;
 use Laravel\Mcp\Server\Methods\ReadResource;
 use Laravel\Mcp\Server\Prompt;
 use Laravel\Mcp\Server\Resource;
+use Laravel\Mcp\Server\Sampling\Sampling;
 use Laravel\Mcp\Server\ServerContext;
 use Laravel\Mcp\Server\ServerNotification;
 use Laravel\Mcp\Server\Testing\PendingTestResponse;
@@ -55,6 +56,8 @@ abstract class Server
     public const CAPABILITY_PROMPTS = 'prompts';
 
     public const CAPABILITY_COMPLETIONS = 'completions';
+
+    public const CAPABILITY_SAMPLING = 'sampling';
 
     public const CAPABILITY_UI = 'io.modelcontextprotocol/ui';
 
@@ -309,10 +312,18 @@ abstract class Server
 
         $container->instance('mcp.request', $request->toRequest());
 
+        $sampling = new Sampling(
+            $this->transport,
+            $this->resolveClientCapabilities(),
+            $this->resolveProtocolVersion($context),
+        );
+        $container->instance(Sampling::class, $sampling);
+
         try {
             $response = $methodClass->handle($request, $context);
         } finally {
             $container->forgetInstance('mcp.request');
+            $container->forgetInstance(Sampling::class);
         }
 
         return $response;

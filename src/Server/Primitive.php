@@ -10,6 +10,7 @@ use Illuminate\Support\Str;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Attributes\Name;
 use Laravel\Mcp\Server\Attributes\Title;
+use Laravel\Mcp\Server\Concerns\HasIcons;
 use Laravel\Mcp\Server\Concerns\HasMeta;
 use Laravel\Mcp\Server\Concerns\ReadsAttributes;
 
@@ -18,6 +19,7 @@ use Laravel\Mcp\Server\Concerns\ReadsAttributes;
  */
 abstract class Primitive implements Arrayable
 {
+    use HasIcons;
     use HasMeta;
     use ReadsAttributes;
 

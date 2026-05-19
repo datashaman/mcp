@@ -144,6 +144,7 @@ class Response
     /**
      * @param  string|class-string<Resource>|Resource|ResourceLink  $uri
      * @param  array<string, mixed>  $annotations
+     * @param  array<int, array{src: string, mimeType?: string, sizes?: array<int, string>, theme?: string}>|null  $icons
      */
     public static function resourceLink(
         string|Resource|ResourceLink $uri,
@@ -153,6 +154,7 @@ class Response
         ?string $description = null,
         ?int $size = null,
         array $annotations = [],
+        ?array $icons = null,
     ): static {
         if (is_string($uri) && is_subclass_of($uri, Resource::class)) {
             $uri = Container::getInstance()->make($uri);
@@ -168,6 +170,7 @@ class Response
                 description: $description ?? $uri->description(),
                 size: $size,
                 annotations: array_merge($uri->annotations(), $annotations),
+                icons: $icons ?? $uri->icons(),
             )),
             default => new ResourceLink(
                 uri: $uri,
@@ -177,6 +180,7 @@ class Response
                 description: $description,
                 size: $size,
                 annotations: $annotations,
+                icons: $icons ?? [],
             ),
         };
 

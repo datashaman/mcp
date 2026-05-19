@@ -61,6 +61,10 @@ class SamplingResult
         }
 
         if (array_is_list($content)) {
+            if ($content === []) {
+                return [Content::text('')];
+            }
+
             return array_map(
                 static fn (mixed $block): Content => Content::fromArray(is_array($block) ? $block : []),
                 $content,

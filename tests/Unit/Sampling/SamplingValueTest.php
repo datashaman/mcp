@@ -81,6 +81,14 @@ it('builds messages with content arrays and meta', function (): void {
     ]);
 });
 
+it('rejects invalid message content arrays', function (): void {
+    /** @var array<int, Content> $content */
+    $content = ['invalid'];
+
+    expect(fn (): Message => Message::assistant($content))
+        ->toThrow(InvalidArgumentException::class, 'Sampling message content at index [0] must be an instance of');
+});
+
 it('serializes sampling tools and tool choice', function (): void {
     $tool = new SamplingTool(
         name: 'get_weather',

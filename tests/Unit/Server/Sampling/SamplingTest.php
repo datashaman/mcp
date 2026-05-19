@@ -110,6 +110,16 @@ it('allows context inclusion when the client declares sampling context', functio
     expect($transport->sentRequests()[0]['params']['includeContext'])->toBe('allServers');
 });
 
+it('reports invalid context inclusion values', function (): void {
+    $sampling = new Sampling(new FakeTransporter, ['sampling' => ['context' => []]]);
+
+    expect(fn (): mixed => $sampling->createMessage(
+        messages: [Message::user('hi')],
+        maxTokens: 50,
+        includeContext: 'elsewhere',
+    ))->toThrow(JsonRpcException::class, 'Invalid sampling includeContext value ["elsewhere"]. Expected one of: none, thisServer, allServers.');
+});
+
 it('requires sampling tools capability when tools are provided', function (): void {
     $sampling = new Sampling(new FakeTransporter, ['sampling' => []]);
 
@@ -120,6 +130,41 @@ it('requires sampling tools capability when tools are provided', function (): vo
             new SamplingTool('get_weather', ['type' => 'object']),
         ],
     ))->toThrow(JsonRpcException::class, 'Client does not support sampling tools.');
+});
+
+it('rejects invalid raw sampling tools', function (): void {
+    $sampling = new Sampling(new FakeTransporter, ['sampling' => ['tools' => []]]);
+
+    /** @var array<int, SamplingTool|array<string, mixed>> $tools */
+    $tools = ['invalid'];
+
+    expect(fn (): mixed => $sampling->createMessage(
+        messages: [Message::user('hi')],
+        maxTokens: 50,
+        tools: $tools,
+    ))->toThrow(JsonRpcException::class, 'Invalid sampling tool at index [0]; expected SamplingTool or array.');
+
+    expect(fn (): mixed => $sampling->createMessage(
+        messages: [Message::user('hi')],
+        maxTokens: 50,
+        tools: [['inputSchema' => ['type' => 'object']]],
+    ))->toThrow(JsonRpcException::class, 'Invalid sampling tool at index [0]; expected non-empty string [name].');
+});
+
+it('rejects invalid raw sampling tool choices', function (): void {
+    $sampling = new Sampling(new FakeTransporter, ['sampling' => ['tools' => []]]);
+
+    expect(fn (): mixed => $sampling->createMessage(
+        messages: [Message::user('hi')],
+        maxTokens: 50,
+        toolChoice: [],
+    ))->toThrow(JsonRpcException::class, 'Invalid sampling toolChoice mode [null]. Expected one of: auto, required, none.');
+
+    expect(fn (): mixed => $sampling->createMessage(
+        messages: [Message::user('hi')],
+        maxTokens: 50,
+        toolChoice: ['mode' => 'sometimes'],
+    ))->toThrow(JsonRpcException::class, 'Invalid sampling toolChoice mode ["sometimes"]. Expected one of: auto, required, none.');
 });
 
 it('sends tools and tool choice when supported', function (): void {
@@ -189,6 +234,17 @@ it('parses richer response content blocks and meta', function (): void {
         ->and($result->contentBlocks[1]->text)->toBe('Checking weather')
         ->and($result->content)->toBe($result->contentBlocks[0])
         ->and($result->meta)->toBe(['requestId' => 'abc']);
+});
+
+it('keeps a default content block when the client returns an empty content list', function (): void {
+    $result = SamplingResult::fromArray([
+        'role' => 'assistant',
+        'content' => [],
+    ]);
+
+    expect($result->contentBlocks)->toHaveCount(1)
+        ->and($result->content)->toBe($result->contentBlocks[0])
+        ->and($result->text())->toBe('');
 });
 
 it('fails when the client does not declare the sampling capability', function (): void {

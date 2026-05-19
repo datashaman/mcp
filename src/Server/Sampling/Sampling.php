@@ -106,7 +106,10 @@ class Sampling extends ClientRequest
         }
 
         if (! in_array($includeContext, ['thisServer', 'allServers'], true)) {
-            throw new JsonRpcException('Invalid sampling includeContext value.', -32602);
+            throw new JsonRpcException(
+                'Invalid sampling includeContext value ['.json_encode($includeContext).']. Expected one of: none, thisServer, allServers.',
+                -32602,
+            );
         }
 
         if (! $this->supportsSamplingFeature('context')) {
@@ -125,6 +128,25 @@ class Sampling extends ClientRequest
      */
     protected function ensureToolSupport(array $tools, ToolChoice|array|null $toolChoice): void
     {
+        foreach (array_values($tools) as $index => $tool) {
+            if ($tool instanceof SamplingTool) {
+                continue;
+            }
+
+            if (! is_array($tool)) {
+                throw new JsonRpcException(
+                    'Invalid sampling tool at index ['.$index.']; expected SamplingTool or array.',
+                    -32602,
+                );
+            }
+
+            $this->ensureToolArray($tool, $index);
+        }
+
+        if (is_array($toolChoice)) {
+            $this->ensureToolChoiceArray($toolChoice);
+        }
+
         if ($tools === [] && $toolChoice === null) {
             return;
         }
@@ -132,6 +154,45 @@ class Sampling extends ClientRequest
         if (! $this->supportsSamplingFeature('tools')) {
             throw new JsonRpcException(
                 'Client does not support sampling tools. Ensure the MCP client declares sampling.tools before sending tools or toolChoice.',
+                -32602,
+            );
+        }
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $tool
+     *
+     * @throws JsonRpcException
+     */
+    protected function ensureToolArray(array $tool, int $index): void
+    {
+        if (! is_string($tool['name'] ?? null) || $tool['name'] === '') {
+            throw new JsonRpcException(
+                'Invalid sampling tool at index ['.$index.']; expected non-empty string [name].',
+                -32602,
+            );
+        }
+
+        if (! is_array($tool['inputSchema'] ?? null)) {
+            throw new JsonRpcException(
+                'Invalid sampling tool at index ['.$index.']; expected array [inputSchema].',
+                -32602,
+            );
+        }
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $toolChoice
+     *
+     * @throws JsonRpcException
+     */
+    protected function ensureToolChoiceArray(array $toolChoice): void
+    {
+        $mode = $toolChoice['mode'] ?? null;
+
+        if (! is_string($mode) || ! in_array($mode, ToolChoice::MODES, true)) {
+            throw new JsonRpcException(
+                'Invalid sampling toolChoice mode ['.json_encode($mode).']. Expected one of: '.implode(', ', ToolChoice::MODES).'.',
                 -32602,
             );
         }

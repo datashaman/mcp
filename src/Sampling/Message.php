@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Laravel\Mcp\Sampling;
 
 use Illuminate\Contracts\Support\Arrayable;
+use InvalidArgumentException;
 
 /**
  * A single message in a sampling conversation.
@@ -23,7 +24,11 @@ class Message implements Arrayable
         public readonly string $role,
         public readonly Content|array $content,
         public readonly array $meta = [],
-    ) {}
+    ) {
+        if (is_array($content)) {
+            self::ensureContentArray($content);
+        }
+    }
 
     /**
      * @param  Content|array<int, Content>|string  $content
@@ -49,7 +54,25 @@ class Message implements Arrayable
      */
     private static function toContent(Content|array|string $content): Content|array
     {
+        if (is_array($content)) {
+            self::ensureContentArray($content);
+        }
+
         return is_string($content) ? Content::text($content) : $content;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $content
+     */
+    private static function ensureContentArray(array $content): void
+    {
+        foreach (array_values($content) as $index => $block) {
+            if (! $block instanceof Content) {
+                throw new InvalidArgumentException(
+                    'Sampling message content at index ['.$index.'] must be an instance of ['.Content::class.']; ['.get_debug_type($block).'] given.',
+                );
+            }
+        }
     }
 
     /**

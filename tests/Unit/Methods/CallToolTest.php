@@ -8,7 +8,10 @@ use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Methods\CallTool;
 use Laravel\Mcp\Server\ServerContext;
+use Laravel\Mcp\Server\Tasks\Tasks;
+use Laravel\Mcp\Server\Tasks\TaskStatusNotification;
 use Laravel\Mcp\Server\Tool;
+use Laravel\Mcp\Server\Transport\FakeTransporter;
 use Laravel\Mcp\Transport\JsonRpcRequest;
 use Laravel\Mcp\Transport\JsonRpcResponse;
 use Tests\Fixtures\CurrentTimeTool;
@@ -212,6 +215,78 @@ it('returns a valid call tool response with authorization error', function (): v
 
     expect($payload['id'])->toEqual(1)
         ->and($payload['result'])->toEqual([
+            'content' => [
+                [
+                    'type' => 'text',
+                    'text' => 'This action is unauthorized.',
+                ],
+            ],
+            'isError' => true,
+        ]);
+});
+
+it('completes task augmented tool calls as failed when a non-streaming tool returns an error response', function (): void {
+    $tool = new class extends Tool
+    {
+        protected string $description = 'Unauthorized task tool';
+
+        public function handle(Request $request): Response
+        {
+            throw new AuthorizationException;
+        }
+
+        public function schema(JsonSchema $schema): array
+        {
+            return [];
+        }
+    };
+
+    $toolClass = $tool::class;
+    $this->instance($toolClass, $tool);
+
+    $request = JsonRpcRequest::from([
+        'jsonrpc' => '2.0',
+        'id' => 1,
+        'method' => 'tools/call',
+        'params' => [
+            'name' => $tool->name(),
+            'arguments' => [],
+            'task' => [],
+        ],
+    ]);
+
+    $context = new ServerContext(
+        supportedProtocolVersions: ['2025-03-26'],
+        serverCapabilities: [
+            'tasks' => [
+                'requests' => [
+                    'tools' => [
+                        'call' => [],
+                    ],
+                ],
+            ],
+        ],
+        serverName: 'Test Server',
+        serverVersion: '1.0.0',
+        instructions: 'Test instructions',
+        maxPaginationLength: 50,
+        defaultPaginationLength: 10,
+        tools: [$toolClass],
+        resources: [],
+        prompts: [],
+    );
+
+    $transport = new FakeTransporter;
+    $store = [];
+    $tasks = new Tasks($transport, $store);
+    $method = new CallTool($tasks, new TaskStatusNotification($transport));
+
+    $this->instance('mcp.request', $request->toRequest());
+    $response = $method->handle($request, $context);
+    $task = $response->toArray()['result']['task'];
+
+    expect($task['status'])->toBe('failed')
+        ->and($tasks->result($task['taskId']))->toEqual([
             'content' => [
                 [
                     'type' => 'text',

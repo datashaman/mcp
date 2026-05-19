@@ -26,12 +26,16 @@ use Laravel\Mcp\Server\Elicitation\Elicitation;
 use Laravel\Mcp\Server\Logging\Logging;
 use Laravel\Mcp\Server\Logging\LogLevel;
 use Laravel\Mcp\Server\Methods\CallTool;
+use Laravel\Mcp\Server\Methods\CancelTask;
 use Laravel\Mcp\Server\Methods\CompletionComplete;
 use Laravel\Mcp\Server\Methods\GetPrompt;
+use Laravel\Mcp\Server\Methods\GetTask;
+use Laravel\Mcp\Server\Methods\GetTaskResult;
 use Laravel\Mcp\Server\Methods\Initialize;
 use Laravel\Mcp\Server\Methods\ListPrompts;
 use Laravel\Mcp\Server\Methods\ListResources;
 use Laravel\Mcp\Server\Methods\ListResourceTemplates;
+use Laravel\Mcp\Server\Methods\ListTasks;
 use Laravel\Mcp\Server\Methods\ListTools;
 use Laravel\Mcp\Server\Methods\Ping;
 use Laravel\Mcp\Server\Methods\ReadResource;
@@ -50,6 +54,8 @@ use Laravel\Mcp\Server\Roots\Roots;
 use Laravel\Mcp\Server\Sampling\Sampling;
 use Laravel\Mcp\Server\ServerContext;
 use Laravel\Mcp\Server\ServerNotification;
+use Laravel\Mcp\Server\Tasks\Tasks;
+use Laravel\Mcp\Server\Tasks\TaskStatusNotification;
 use Laravel\Mcp\Server\Testing\PendingTestResponse;
 use Laravel\Mcp\Server\Testing\TestResponse;
 use Laravel\Mcp\Server\Tool;
@@ -85,6 +91,8 @@ abstract class Server
     public const CAPABILITY_LOGGING = 'logging';
 
     public const CAPABILITY_UI = 'io.modelcontextprotocol/ui';
+
+    public const CAPABILITY_TASKS = 'tasks';
 
     protected string $name = 'Laravel MCP Server';
 
@@ -156,6 +164,11 @@ abstract class Server
      */
     protected array $resourceSubscriptions = [];
 
+    /**
+     * @var array<string, array<string, mixed>>
+     */
+    protected array $tasks = [];
+
     public int $maxPaginationLength = 50;
 
     public int $defaultPaginationLength = 15;
@@ -174,6 +187,10 @@ abstract class Server
         'prompts/list' => ListPrompts::class,
         'prompts/get' => GetPrompt::class,
         'completion/complete' => CompletionComplete::class,
+        'tasks/get' => GetTask::class,
+        'tasks/result' => GetTaskResult::class,
+        'tasks/cancel' => CancelTask::class,
+        'tasks/list' => ListTasks::class,
         'ping' => Ping::class,
     ];
 
@@ -188,19 +205,25 @@ abstract class Server
      *
      * Using dot notation like "feature.enabled" will create a nested capability array.
      * Passing a single key like "anotherFeature" will register an empty object capability.
+     *
+     * @param  bool|array<string, mixed>|stdClass  $value
      */
-    public function addCapability(string $key, bool $value = true): void
+    public function addCapability(string $key, bool|array|stdClass $value = true): void
     {
         if (str_contains($key, '.')) {
-            [$root, $child] = explode('.', $key, 2);
-            $existing = $this->capabilities[$root] ?? [];
+            $target = &$this->capabilities;
+            $segments = explode('.', $key);
+            $last = array_pop($segments);
 
-            if (! is_array($existing)) {
-                $existing = [];
+            foreach ($segments as $segment) {
+                if (! isset($target[$segment]) || ! is_array($target[$segment])) {
+                    $target[$segment] = [];
+                }
+
+                $target = &$target[$segment];
             }
 
-            $existing[$child] = $value;
-            $this->capabilities[$root] = $existing;
+            $target[$last] = $value;
 
             return;
         }
@@ -475,6 +498,10 @@ abstract class Server
         $container->instance(ToolListChangedNotification::class, new ToolListChangedNotification($this->transport));
         $container->instance(ResourceListChangedNotification::class, new ResourceListChangedNotification($this->transport));
         $container->instance(PromptListChangedNotification::class, new PromptListChangedNotification($this->transport));
+
+        $tasks = new Tasks($this->transport, $this->tasks, $this->httpSessionTtl());
+        $container->instance(Tasks::class, $tasks);
+        $container->instance(TaskStatusNotification::class, new TaskStatusNotification($this->transport));
         $container->instance(ProgressNotification::class, new ProgressNotification($this->transport));
 
         /** @var Method $methodClass */
@@ -495,6 +522,8 @@ abstract class Server
             $container->forgetInstance(ToolListChangedNotification::class);
             $container->forgetInstance(ResourceListChangedNotification::class);
             $container->forgetInstance(PromptListChangedNotification::class);
+            $container->forgetInstance(Tasks::class);
+            $container->forgetInstance(TaskStatusNotification::class);
             $container->forgetInstance(ProgressNotification::class);
         }
 

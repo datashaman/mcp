@@ -12,6 +12,7 @@ use Laravel\Mcp\Transport\JsonRpcRequest;
 use Laravel\Mcp\Transport\JsonRpcResponse;
 use Tests\Fixtures\ArrayTransport;
 use Tests\Fixtures\CustomMethodHandler;
+use Tests\Fixtures\EmitResourceUpdatedMethodHandler;
 use Tests\Fixtures\ExampleServer;
 use Tests\Fixtures\ThrowingMethodHandler;
 
@@ -70,6 +71,92 @@ it('can advertise the logging capability', function (): void {
 
     expect($response['result']['capabilities'])->toHaveKey(Server::CAPABILITY_LOGGING)
         ->and($response['result']['capabilities'][Server::CAPABILITY_LOGGING])->toBe([]);
+});
+
+it('can advertise the resource subscription capability', function (): void {
+    $transport = new ArrayTransport;
+    $server = new ExampleServer($transport);
+    $server->addCapability('resources.subscribe', true);
+
+    $server->start();
+
+    ($transport->handler)(json_encode(initializeMessage()));
+
+    $response = json_decode((string) $transport->sent[0], true);
+
+    expect($response['result']['capabilities']['resources']['subscribe'])->toBeTrue();
+});
+
+it('handles resource subscription methods and update notifications', function (): void {
+    $transport = new ArrayTransport;
+    $server = new ExampleServer($transport);
+    $server->addCapability('resources.subscribe', true);
+    $server->addMethod('test/resource-updated', EmitResourceUpdatedMethodHandler::class);
+
+    $server->start();
+
+    ($transport->handler)(json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 10,
+        'method' => 'resources/subscribe',
+        'params' => ['uri' => 'file:///project'],
+    ]));
+
+    ($transport->handler)(json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 11,
+        'method' => 'test/resource-updated',
+        'params' => ['uri' => 'file:///project/src/main.rs'],
+    ]));
+
+    ($transport->handler)(json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 12,
+        'method' => 'resources/unsubscribe',
+        'params' => ['uri' => 'file:///project'],
+    ]));
+
+    ($transport->handler)(json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 13,
+        'method' => 'test/resource-updated',
+        'params' => ['uri' => 'file:///project/src/main.rs'],
+    ]));
+
+    $sent = array_map(
+        static fn (string $message): array => json_decode($message, true),
+        $transport->sent,
+    );
+
+    expect($sent)->toBe([
+        [
+            'jsonrpc' => '2.0',
+            'id' => 10,
+            'result' => [],
+        ],
+        [
+            'jsonrpc' => '2.0',
+            'method' => 'notifications/resources/updated',
+            'params' => [
+                'uri' => 'file:///project/src/main.rs',
+            ],
+        ],
+        [
+            'jsonrpc' => '2.0',
+            'id' => 11,
+            'result' => [],
+        ],
+        [
+            'jsonrpc' => '2.0',
+            'id' => 12,
+            'result' => [],
+        ],
+        [
+            'jsonrpc' => '2.0',
+            'id' => 13,
+            'result' => [],
+        ],
+    ]);
 });
 
 it('handles logging set level requests', function (): void {

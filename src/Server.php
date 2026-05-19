@@ -35,9 +35,13 @@ use Laravel\Mcp\Server\Methods\ListResourceTemplates;
 use Laravel\Mcp\Server\Methods\ListTools;
 use Laravel\Mcp\Server\Methods\Ping;
 use Laravel\Mcp\Server\Methods\ReadResource;
+use Laravel\Mcp\Server\Methods\SubscribeResource;
+use Laravel\Mcp\Server\Methods\UnsubscribeResource;
 use Laravel\Mcp\Server\Notifications\ProgressNotification;
 use Laravel\Mcp\Server\Prompt;
 use Laravel\Mcp\Server\Resource;
+use Laravel\Mcp\Server\Resources\ResourceSubscriptions;
+use Laravel\Mcp\Server\Resources\ResourceUpdatedNotification;
 use Laravel\Mcp\Server\Roots\Events\RootsListChanged;
 use Laravel\Mcp\Server\Roots\Roots;
 use Laravel\Mcp\Server\Sampling\Sampling;
@@ -144,6 +148,11 @@ abstract class Server
 
     protected ?string $loggingLevel = null;
 
+    /**
+     * @var array<int, string>
+     */
+    protected array $resourceSubscriptions = [];
+
     public int $maxPaginationLength = 50;
 
     public int $defaultPaginationLength = 15;
@@ -156,6 +165,8 @@ abstract class Server
         'tools/call' => CallTool::class,
         'resources/list' => ListResources::class,
         'resources/read' => ReadResource::class,
+        'resources/subscribe' => SubscribeResource::class,
+        'resources/unsubscribe' => UnsubscribeResource::class,
         'resources/templates/list' => ListResourceTemplates::class,
         'prompts/list' => ListPrompts::class,
         'prompts/get' => GetPrompt::class,
@@ -417,11 +428,6 @@ abstract class Server
     {
         $container = Container::getInstance();
 
-        /** @var Method $methodClass */
-        $methodClass = $container->make(
-            $this->methods[$request->method],
-        );
-
         $container->instance('mcp.request', $request->toRequest());
 
         $sampling = new Sampling(
@@ -452,7 +458,23 @@ abstract class Server
         );
         $container->instance(Logging::class, $logging);
 
+        $resourceSubscriptions = new ResourceSubscriptions(
+            $this->transport,
+            $this->resourceSubscriptions,
+            $this->httpSessionTtl(),
+        );
+        $container->instance(ResourceSubscriptions::class, $resourceSubscriptions);
+        $container->instance(ResourceUpdatedNotification::class, new ResourceUpdatedNotification(
+            $this->transport,
+            $resourceSubscriptions,
+        ));
+
         $container->instance(ProgressNotification::class, new ProgressNotification($this->transport));
+
+        /** @var Method $methodClass */
+        $methodClass = $container->make(
+            $this->methods[$request->method],
+        );
 
         try {
             $response = $methodClass->handle($request, $context);
@@ -462,6 +484,8 @@ abstract class Server
             $container->forgetInstance(Elicitation::class);
             $container->forgetInstance(Roots::class);
             $container->forgetInstance(Logging::class);
+            $container->forgetInstance(ResourceSubscriptions::class);
+            $container->forgetInstance(ResourceUpdatedNotification::class);
             $container->forgetInstance(ProgressNotification::class);
         }
 
@@ -575,6 +599,12 @@ abstract class Server
      */
     protected function serverNotification(string $class): ServerNotification
     {
+        $container = Container::getInstance();
+
+        if ($container->bound($class)) {
+            return $container->make($class);
+        }
+
         return new $class($this->transport);
     }
 

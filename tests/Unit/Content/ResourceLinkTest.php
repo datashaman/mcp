@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Content\ResourceLink;
 use Laravel\Mcp\Server\Prompt;
 use Laravel\Mcp\Server\Resource;
@@ -123,4 +124,70 @@ it('supports meta via setMeta', function (): void {
         'name' => 'Resource',
         '_meta' => ['version' => '2'],
     ]);
+});
+
+it('includes icons when provided', function (): void {
+    $resourceLink = new ResourceLink(
+        uri: 'https://example.com/resource',
+        name: 'Resource',
+        icons: [
+            [
+                'src' => 'https://example.com/resource.png',
+                'mimeType' => 'image/png',
+                'sizes' => ['48x48'],
+                'theme' => 'light',
+            ],
+        ],
+    );
+
+    expect($resourceLink->toArray())->toMatchArray([
+        'type' => 'resource_link',
+        'uri' => 'https://example.com/resource',
+        'name' => 'Resource',
+        'icons' => [
+            [
+                'src' => 'https://example.com/resource.png',
+                'mimeType' => 'image/png',
+                'sizes' => ['48x48'],
+                'theme' => 'light',
+            ],
+        ],
+    ]);
+});
+
+it('inherits icons from a resource', function (): void {
+    $resource = new class extends Resource
+    {
+        protected string $uri = 'file://resources/report.md';
+
+        protected array $icons = [
+            ['src' => 'https://example.com/report.png'],
+        ];
+    };
+
+    $response = Response::resourceLink($resource);
+
+    expect($response->content()->toArray())->toMatchArray([
+        'type' => 'resource_link',
+        'uri' => 'file://resources/report.md',
+        'name' => $resource->name(),
+        'icons' => [
+            ['src' => 'https://example.com/report.png'],
+        ],
+    ]);
+});
+
+it('can override resource icons with none', function (): void {
+    $resource = new class extends Resource
+    {
+        protected string $uri = 'file://resources/report.md';
+
+        protected array $icons = [
+            ['src' => 'https://example.com/report.png'],
+        ];
+    };
+
+    $response = Response::resourceLink($resource, icons: []);
+
+    expect($response->content()->toArray())->not->toHaveKey('icons');
 });

@@ -2,6 +2,7 @@
 
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Response;
+use Laravel\Mcp\Server\Attributes\Icon;
 use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 use Laravel\Mcp\Server\Tools\Annotations\IsIdempotent;
@@ -100,6 +101,38 @@ it('can have custom meta', function (): void {
     expect($tool->toArray()['_meta'])->toEqual(['key' => 'value']);
 });
 
+it('can have property based icons', function (): void {
+    $tool = new ToolWithIcons;
+
+    expect($tool->icons())->toBe([
+        [
+            'src' => 'https://example.com/tool.png',
+            'mimeType' => 'image/png',
+            'sizes' => ['48x48'],
+            'theme' => 'light',
+        ],
+    ])->and($tool->toArray()['icons'])->toBe($tool->icons());
+});
+
+it('can have attribute based icons', function (): void {
+    $tool = new ToolWithIconAttributes;
+
+    expect($tool->icons())->toBe([
+        [
+            'src' => 'https://example.com/tool-light.svg',
+            'mimeType' => 'image/svg+xml',
+            'sizes' => ['any'],
+            'theme' => 'light',
+        ],
+        [
+            'src' => 'https://example.com/tool-dark.svg',
+            'mimeType' => 'image/svg+xml',
+            'sizes' => ['any'],
+            'theme' => 'dark',
+        ],
+    ])->and($tool->toArray()['icons'])->toBe($tool->icons());
+});
+
 it('default outputSchema returns empty array', function (): void {
     $tool = new ToolWithoutOutputSchema;
     $array = $tool->toArray();
@@ -184,6 +217,22 @@ class CustomMetaTool extends TestTool
         'key' => 'value',
     ];
 }
+
+class ToolWithIcons extends TestTool
+{
+    protected array $icons = [
+        [
+            'src' => 'https://example.com/tool.png',
+            'mimeType' => 'image/png',
+            'sizes' => ['48x48'],
+            'theme' => 'light',
+        ],
+    ];
+}
+
+#[Icon('https://example.com/tool-light.svg', mimeType: 'image/svg+xml', sizes: ['any'], theme: 'light')]
+#[Icon('https://example.com/tool-dark.svg', mimeType: 'image/svg+xml', sizes: ['any'], theme: 'dark')]
+class ToolWithIconAttributes extends TestTool {}
 
 class ToolWithOutputSchema extends TestTool
 {

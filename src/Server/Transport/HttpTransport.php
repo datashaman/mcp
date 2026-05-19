@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Laravel\Mcp\Server\Transport;
 
 use Closure;
+use Illuminate\Container\Container;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Laravel\Mcp\Exceptions\JsonRpcException;
 use Laravel\Mcp\Server\Contracts\Transport;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -22,6 +24,7 @@ class HttpTransport implements Transport
         protected ?string $reply = null,
         protected ?string $replySessionId = null,
         protected ?Closure $stream = null,
+        protected bool $streamingResponse = false,
     ) {
         //
     }
@@ -33,7 +36,7 @@ class HttpTransport implements Transport
 
     public function send(string $message, ?string $sessionId = null): void
     {
-        if ($this->stream instanceof Closure) {
+        if ($this->streamingResponse || $this->stream instanceof Closure) {
             $this->sendStreamMessage($message);
         }
 
@@ -43,6 +46,35 @@ class HttpTransport implements Transport
 
     public function run(): Response|StreamedResponse
     {
+        if ($this->shouldStreamResponse()) {
+            $this->streamingResponse = true;
+
+            return response()->stream(function (): void {
+                if (is_callable($this->handler)) {
+                    ($this->handler)($this->request->getContent());
+                }
+
+                if (! $this->stream instanceof Closure) {
+                    return;
+                }
+
+                $stream = $this->stream;
+                $result = $stream();
+
+                if (! is_iterable($result)) {
+                    return;
+                }
+
+                foreach ($result as $message) {
+                    if (connection_aborted() !== 0) {
+                        return;
+                    }
+
+                    $this->sendStreamMessage((string) $message);
+                }
+            }, 200, $this->getHeaders());
+        }
+
         if (is_callable($this->handler)) {
             ($this->handler)($this->request->getContent());
         }
@@ -81,6 +113,13 @@ class HttpTransport implements Transport
         return $this->sessionId;
     }
 
+    public function protocolVersion(): ?string
+    {
+        $protocolVersion = $this->request->header('MCP-Protocol-Version');
+
+        return is_string($protocolVersion) && $protocolVersion !== '' ? $protocolVersion : null;
+    }
+
     /**
      * Register a streaming callback.
      *
@@ -104,23 +143,91 @@ class HttpTransport implements Transport
         flush();
     }
 
+    public function sendRequest(string $message): string
+    {
+        if (! $this->streamingResponse) {
+            throw new JsonRpcException('A server-to-client request requires a text/event-stream response. Send the request with Accept: text/event-stream.', -32603);
+        }
+
+        $decoded = json_decode($message, true);
+
+        if (! is_array($decoded) || (! is_int($decoded['id'] ?? null) && ! is_string($decoded['id'] ?? null))) {
+            throw new JsonRpcException('Invalid server-to-client request: JSON-RPC id is required.', -32603);
+        }
+
+        if ($this->sessionId === '') {
+            throw new JsonRpcException('A server-to-client request requires a non-empty MCP session id.', -32603);
+        }
+
+        $this->sendStreamMessage($message);
+
+        $requestId = $decoded['id'];
+        $cacheKey = "mcp:response:{$this->sessionId}:{$requestId}";
+
+        $cache = Container::getInstance()->make('cache');
+        $timeout = 120;
+        $interval = 100_000;
+        $elapsed = 0;
+
+        while ($elapsed < $timeout) {
+            $response = $cache->pull($cacheKey);
+
+            if ($response !== null) {
+                return $response;
+            }
+
+            usleep($interval);
+            $elapsed += $interval / 1_000_000;
+        }
+
+        $cache->forget($cacheKey);
+
+        throw new JsonRpcException('Request to client timed out.', -32603);
+    }
+
+    public function sendNotification(string $message): void
+    {
+        if (! $this->streamingResponse) {
+            throw new JsonRpcException('A server-to-client notification requires a text/event-stream response. Send the triggering request with Accept: text/event-stream.', -32603);
+        }
+
+        $this->sendStreamMessage($message);
+    }
+
     /**
      * @return array<string, string>
      */
     protected function getHeaders(): array
     {
         $headers = [
-            'Content-Type' => $this->stream instanceof Closure ? 'text/event-stream' : 'application/json',
+            'Content-Type' => ($this->streamingResponse || $this->stream instanceof Closure) ? 'text/event-stream' : 'application/json',
         ];
 
         if ($this->replySessionId !== null) {
             $headers['MCP-Session-Id'] = $this->replySessionId;
         }
 
-        if ($this->stream instanceof Closure) {
+        if ($this->streamingResponse || $this->stream instanceof Closure) {
             $headers['X-Accel-Buffering'] = 'no';
         }
 
         return $headers;
+    }
+
+    protected function acceptsEventStream(): bool
+    {
+        $accept = $this->request->header('Accept');
+
+        return is_string($accept) && str_contains($accept, 'text/event-stream');
+    }
+
+    protected function shouldStreamResponse(): bool
+    {
+        $message = json_decode($this->request->getContent(), true);
+
+        return $this->acceptsEventStream()
+            && is_array($message)
+            && isset($message['id'], $message['method'])
+            && $message['method'] !== 'initialize';
     }
 }

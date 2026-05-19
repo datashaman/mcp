@@ -1,6 +1,7 @@
 <?php
 
 use Laravel\Mcp\Response;
+use Laravel\Mcp\Server\Attributes\Icon;
 use Laravel\Mcp\Server\Prompt;
 use Laravel\Mcp\Server\Prompts\Argument;
 
@@ -87,4 +88,28 @@ it('includes meta in array representation with other fields', function (): void 
         ->_meta->toEqual(['version' => '1.0'])
         ->arguments->toHaveCount(1);
 
+});
+
+it('can have property based icons', function (): void {
+    $prompt = new class extends Prompt
+    {
+        protected array $icons = [
+            ['src' => 'https://example.com/prompt.png', 'theme' => 'dark'],
+        ];
+    };
+
+    expect($prompt->icons())->toBe([
+        ['src' => 'https://example.com/prompt.png', 'theme' => 'dark'],
+    ])->and($prompt->toArray()['icons'])->toBe($prompt->icons());
+});
+
+it('can have attribute based icons', function (): void {
+    $prompt = new #[Icon('https://example.com/prompt.svg', mimeType: 'image/svg+xml')] class extends Prompt {};
+
+    expect($prompt->icons())->toBe([
+        [
+            'src' => 'https://example.com/prompt.svg',
+            'mimeType' => 'image/svg+xml',
+        ],
+    ])->and($prompt->toArray()['icons'])->toBe($prompt->icons());
 });

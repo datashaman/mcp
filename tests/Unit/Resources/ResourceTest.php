@@ -1,6 +1,7 @@
 <?php
 
 use Laravel\Mcp\Response;
+use Laravel\Mcp\Server\Attributes\Icon;
 use Laravel\Mcp\Server\Resource;
 
 it('returns a valid resource result for text resources', function (): void {
@@ -177,4 +178,29 @@ it('can have custom meta', function (): void {
             'author' => 'John Doe',
             'version' => '1.0',
         ]);
+});
+
+it('can have property based icons', function (): void {
+    $resource = new class extends Resource
+    {
+        protected array $icons = [
+            ['src' => 'https://example.com/resource.png', 'mimeType' => 'image/png'],
+        ];
+    };
+
+    expect($resource->icons())->toBe([
+        ['src' => 'https://example.com/resource.png', 'mimeType' => 'image/png'],
+    ])->and($resource->toArray()['icons'])->toBe($resource->icons());
+});
+
+it('can have attribute based icons', function (): void {
+    $resource = new #[Icon('https://example.com/resource.svg', mimeType: 'image/svg+xml', sizes: ['any'])] class extends Resource {};
+
+    expect($resource->icons())->toBe([
+        [
+            'src' => 'https://example.com/resource.svg',
+            'mimeType' => 'image/svg+xml',
+            'sizes' => ['any'],
+        ],
+    ])->and($resource->toArray()['icons'])->toBe($resource->icons());
 });

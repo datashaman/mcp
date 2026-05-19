@@ -5,12 +5,14 @@ declare(strict_types=1);
 use Laravel\Mcp\Response;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Description;
+use Laravel\Mcp\Server\Attributes\Icon;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\MimeType;
 use Laravel\Mcp\Server\Attributes\Name;
 use Laravel\Mcp\Server\Attributes\Title;
 use Laravel\Mcp\Server\Attributes\Uri;
 use Laravel\Mcp\Server\Attributes\Version;
+use Laravel\Mcp\Server\Attributes\WebsiteUrl;
 use Laravel\Mcp\Server\Contracts\HasUriTemplate;
 use Laravel\Mcp\Server\Prompt;
 use Laravel\Mcp\Server\Resource;
@@ -153,6 +155,43 @@ it('resolves server instructions from attribute', function (): void {
     expect($context->instructions)->toBe('Custom instructions via attribute');
 });
 
+it('resolves richer server metadata from properties', function (): void {
+    $transport = new ArrayTransport;
+    $server = new PropertyMetadataServer($transport);
+
+    $context = $server->createContext();
+
+    expect($context->serverTitle)->toBe('Property Title')
+        ->and($context->serverDescription)->toBe('Property description')
+        ->and($context->serverIcons)->toBe([
+            ['src' => 'https://example.com/property.png'],
+        ])
+        ->and($context->serverWebsiteUrl)->toBe('https://example.com/property');
+});
+
+it('resolves richer server metadata from attributes', function (): void {
+    $transport = new ArrayTransport;
+    $server = new AttributeMetadataServer($transport);
+
+    $context = $server->createContext();
+
+    expect($context->serverTitle)->toBe('Attribute Title')
+        ->and($context->serverDescription)->toBe('Attribute description')
+        ->and($context->serverIcons)->toBe([
+            [
+                'src' => 'https://example.com/light.svg',
+                'mimeType' => 'image/svg+xml',
+                'sizes' => ['any'],
+                'theme' => 'light',
+            ],
+            [
+                'src' => 'https://example.com/dark.svg',
+                'theme' => 'dark',
+            ],
+        ])
+        ->and($context->serverWebsiteUrl)->toBe('https://example.com/attribute');
+});
+
 it('prefers attribute over property for server name', function (): void {
     $transport = new ArrayTransport;
     $server = new AttributeOverridesPropertyNameServer($transport);
@@ -263,6 +302,26 @@ class ChildServerWithoutAttribute extends ParentServerWithAttribute {}
 
 #[Name('Child Server')]
 class ChildServerWithOverride extends ParentServerWithAttribute {}
+
+class PropertyMetadataServer extends Server
+{
+    protected string $title = 'Property Title';
+
+    protected string $description = 'Property description';
+
+    protected array $icons = [
+        ['src' => 'https://example.com/property.png'],
+    ];
+
+    protected string $websiteUrl = 'https://example.com/property';
+}
+
+#[Title('Attribute Title')]
+#[Description('Attribute description')]
+#[Icon('https://example.com/light.svg', mimeType: 'image/svg+xml', sizes: ['any'], theme: 'light')]
+#[Icon('https://example.com/dark.svg', theme: 'dark')]
+#[WebsiteUrl('https://example.com/attribute')]
+class AttributeMetadataServer extends Server {}
 
 #[Name('custom-tool-name')]
 class AttributeNameTool extends Tool

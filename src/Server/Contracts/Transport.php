@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Laravel\Mcp\Server\Contracts;
 
 use Closure;
+use Laravel\Mcp\Exceptions\JsonRpcException;
 
 interface Transport
 {
@@ -17,4 +18,18 @@ interface Transport
     public function sessionId(): ?string;
 
     public function stream(Closure $stream): void;
+
+    /**
+     * Send a JSON-RPC request to the client and block until the response is received.
+     *
+     * @throws JsonRpcException
+     */
+    public function sendRequest(string $message): string;
+
+    /**
+     * Send a JSON-RPC notification to the client. Fire-and-forget — no id, no response.
+     *
+     * @throws JsonRpcException
+     */
+    public function sendNotification(string $message): void;
 }

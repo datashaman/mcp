@@ -116,6 +116,19 @@ it('defaults params to empty array and supports getters', function (): void {
         ->and($requestWithCursor->get('foo'))->toEqual('bar');
 });
 
+it('throws exception for non array params', function (): void {
+    $this->expectException(JsonRpcException::class);
+    $this->expectExceptionMessage('Invalid Request: The [params] member must be an object or array.');
+    $this->expectExceptionCode(-32600);
+
+    JsonRpcRequest::from([
+        'jsonrpc' => '2.0',
+        'id' => 1,
+        'method' => 'tools/call',
+        'params' => 'invalid',
+    ]);
+});
+
 it('extracts _meta from params', function (): void {
     $request = JsonRpcRequest::from([
         'jsonrpc' => '2.0',

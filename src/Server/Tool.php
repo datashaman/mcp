@@ -52,6 +52,7 @@ abstract class Tool extends Primitive
      *     inputSchema?: array<string, mixed>,
      *     outputSchema?: array<string, mixed>,
      *     annotations?: array<string, mixed>|object,
+     *     icons?: array<int, array{src: string, mimeType?: string, sizes?: array<int, string>, theme?: string}>,
      *     _meta?: array<string, mixed>
      * }
      */
@@ -94,7 +95,7 @@ abstract class Tool extends Primitive
         }
 
         // @phpstan-ignore return.type
-        return $this->mergeMeta($result);
+        return $this->mergeMeta($this->mergeIcons($result));
     }
 
     /**

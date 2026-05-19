@@ -12,6 +12,26 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class FakeTransporter implements Transport
 {
+    /**
+     * @var array<int, string>
+     */
+    protected array $queuedResponses = [];
+
+    /**
+     * @var array<int, array<string, mixed>>
+     */
+    protected array $sentRequests = [];
+
+    /**
+     * @var array<int, string>
+     */
+    protected array $sentMessages = [];
+
+    /**
+     * @var array<int, string>
+     */
+    protected array $sentNotifications = [];
+
     public function onReceive(Closure $handler): void
     {
         //
@@ -19,7 +39,7 @@ class FakeTransporter implements Transport
 
     public function send(string $message, ?string $sessionId = null): void
     {
-        //
+        $this->sentMessages[] = $message;
     }
 
     public function run(): Response|StreamedResponse
@@ -35,5 +55,114 @@ class FakeTransporter implements Transport
     public function stream(Closure $stream): void
     {
         //
+    }
+
+    /**
+     * Queue a JSON-RPC result to be returned by the next sendRequest() call.
+     *
+     * @param  array<string, mixed>  $result
+     */
+    public function expectResponse(array $result): void
+    {
+        $this->queuedResponses[] = (string) json_encode([
+            'jsonrpc' => '2.0',
+            'id' => '_placeholder_',
+            'result' => $result,
+        ]);
+    }
+
+    /**
+     * Queue a JSON-RPC error to be returned by the next sendRequest() call.
+     *
+     * @param  array<string, mixed>|null  $data
+     */
+    public function expectError(int $code, string $message, ?array $data = null): void
+    {
+        $error = [
+            'code' => $code,
+            'message' => $message,
+        ];
+
+        if ($data !== null) {
+            $error['data'] = $data;
+        }
+
+        $this->queuedResponses[] = (string) json_encode([
+            'jsonrpc' => '2.0',
+            'id' => '_placeholder_',
+            'error' => $error,
+        ]);
+    }
+
+    /**
+     * Queue an elicitation JSON-RPC result to be returned by the next sendRequest() call.
+     *
+     * @param  array<string, mixed>  $result
+     */
+    public function expectElicitation(array $result): void
+    {
+        $this->expectResponse($result);
+    }
+
+    public function sendRequest(string $message): string
+    {
+        $request = json_decode($message, true);
+
+        if (! is_array($request)
+            || (! is_int($request['id'] ?? null) && ! is_string($request['id'] ?? null))
+            || ! is_string($request['method'] ?? null)) {
+            throw new LogicException('Invalid JSON-RPC request message.');
+        }
+
+        $this->sentRequests[] = $request;
+
+        if ($this->queuedResponses === []) {
+            throw new LogicException('No responses queued. Call expectResponse() first.');
+        }
+
+        $response = json_decode(array_shift($this->queuedResponses), true);
+        $response['id'] = $request['id'];
+
+        return (string) json_encode($response);
+    }
+
+    public function sendNotification(string $message): void
+    {
+        $this->sentNotifications[] = $message;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function sentRequests(): array
+    {
+        return $this->sentRequests;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function sentElicitations(): array
+    {
+        return array_values(array_filter(
+            $this->sentRequests,
+            static fn (array $request): bool => ($request['method'] ?? null) === 'elicitation/create',
+        ));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function sentMessages(): array
+    {
+        return $this->sentMessages;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function sentNotifications(): array
+    {
+        return $this->sentNotifications;
     }
 }

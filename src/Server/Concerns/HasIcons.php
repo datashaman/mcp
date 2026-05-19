@@ -16,18 +16,31 @@ trait HasIcons
     protected array $icons = [];
 
     /**
+     * @var array<class-string, array<int, array{src: string, mimeType?: string, sizes?: array<int, string>, theme?: string}>|null>
+     */
+    protected static array $iconAttributeCache = [];
+
+    /**
      * @return array<int, array{src: string, mimeType?: string, sizes?: array<int, string>, theme?: string}>
      */
     public function icons(): array
     {
-        $attributes = (new ReflectionClass($this))
-            ->getAttributes(Icon::class);
+        $class = static::class;
 
-        if ($attributes !== []) {
-            return array_map(
-                static fn (ReflectionAttribute $attribute): array => $attribute->newInstance()->toArray(),
-                $attributes,
-            );
+        if (! array_key_exists($class, static::$iconAttributeCache)) {
+            $attributes = (new ReflectionClass($this))
+                ->getAttributes(Icon::class);
+
+            static::$iconAttributeCache[$class] = $attributes === []
+                ? null
+                : array_map(
+                    static fn (ReflectionAttribute $attribute): array => $attribute->newInstance()->toArray(),
+                    $attributes,
+                );
+        }
+
+        if (static::$iconAttributeCache[$class] !== null) {
+            return static::$iconAttributeCache[$class];
         }
 
         return $this->icons;

@@ -28,7 +28,7 @@ abstract class Prompt extends Primitive
     }
 
     /**
-     * @return array{name: string, title: string, description: string, arguments: array<int, array{name: string, description: string, required: bool, _meta?: array<string, mixed>}>}
+     * @return array{name: string, title: string, description: string, arguments: array<int, array{name: string, description: string, required: bool, _meta?: array<string, mixed>}>, icons?: array<int, array{src: string, mimeType?: string, sizes?: array<int, string>, theme?: string}>}
      */
     public function toArray(): array
     {

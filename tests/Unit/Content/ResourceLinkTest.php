@@ -176,3 +176,18 @@ it('inherits icons from a resource', function (): void {
         ],
     ]);
 });
+
+it('can override resource icons with none', function (): void {
+    $resource = new class extends Resource
+    {
+        protected string $uri = 'file://resources/report.md';
+
+        protected array $icons = [
+            ['src' => 'https://example.com/report.png'],
+        ];
+    };
+
+    $response = Response::resourceLink($resource, icons: []);
+
+    expect($response->content()->toArray())->not->toHaveKey('icons');
+});

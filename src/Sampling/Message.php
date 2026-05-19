@@ -15,24 +15,41 @@ use Illuminate\Contracts\Support\Arrayable;
  */
 class Message implements Arrayable
 {
+    /**
+     * @param  Content|array<int, Content>  $content
+     * @param  array<string, mixed>  $meta
+     */
     public function __construct(
         public readonly string $role,
-        public readonly Content $content,
+        public readonly Content|array $content,
+        public readonly array $meta = [],
     ) {}
 
-    public static function user(Content|string $content): self
+    /**
+     * @param  Content|array<int, Content>|string  $content
+     * @param  array<string, mixed>  $meta
+     */
+    public static function user(Content|array|string $content, array $meta = []): self
     {
-        return new self('user', self::toContent($content));
+        return new self('user', self::toContent($content), $meta);
     }
 
-    public static function assistant(Content|string $content): self
+    /**
+     * @param  Content|array<int, Content>|string  $content
+     * @param  array<string, mixed>  $meta
+     */
+    public static function assistant(Content|array|string $content, array $meta = []): self
     {
-        return new self('assistant', self::toContent($content));
+        return new self('assistant', self::toContent($content), $meta);
     }
 
-    private static function toContent(Content|string $content): Content
+    /**
+     * @param  Content|array<int, Content>|string  $content
+     * @return Content|array<int, Content>
+     */
+    private static function toContent(Content|array|string $content): Content|array
     {
-        return $content instanceof Content ? $content : Content::text($content);
+        return is_string($content) ? Content::text($content) : $content;
     }
 
     /**
@@ -40,9 +57,17 @@ class Message implements Arrayable
      */
     public function toArray(): array
     {
-        return [
+        $message = [
             'role' => $this->role,
-            'content' => $this->content->toArray(),
+            'content' => is_array($this->content)
+                ? array_map(static fn (Content $content): array => $content->toArray(), array_values($this->content))
+                : $this->content->toArray(),
         ];
+
+        if ($this->meta !== []) {
+            $message['_meta'] = $this->meta;
+        }
+
+        return $message;
     }
 }

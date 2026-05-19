@@ -16,6 +16,7 @@ class ServerContext
      * @param  array<int, Tool|string>  $tools
      * @param  array<int, Resource|string>  $resources
      * @param  array<int, Prompt|string>  $prompts
+     * @param  array<int, array{src: string, mimeType?: string, sizes?: array<int, string>, theme?: string}>  $serverIcons
      */
     public function __construct(
         public array $supportedProtocolVersions,
@@ -28,6 +29,10 @@ class ServerContext
         protected array $tools,
         protected array $resources,
         protected array $prompts,
+        public string $serverTitle = '',
+        public string $serverDescription = '',
+        public array $serverIcons = [],
+        public string $serverWebsiteUrl = '',
     ) {
         //
     }

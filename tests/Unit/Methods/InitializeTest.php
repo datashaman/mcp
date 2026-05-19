@@ -44,6 +44,94 @@ it('returns a valid initialize response', function (): void {
         ]);
 });
 
+it('includes richer implementation metadata for the latest protocol', function (): void {
+    $request = JsonRpcRequest::from([
+        'jsonrpc' => '2.0',
+        'id' => 1,
+        'method' => 'initialize',
+        'params' => [
+            'protocolVersion' => '2025-11-25',
+        ],
+    ]);
+
+    $context = new ServerContext(
+        supportedProtocolVersions: ['2025-11-25'],
+        serverCapabilities: [],
+        serverName: 'test-server',
+        serverVersion: '1.0.0',
+        instructions: 'Test instructions',
+        maxPaginationLength: 50,
+        defaultPaginationLength: 10,
+        tools: [],
+        resources: [],
+        prompts: [],
+        serverTitle: 'Test Server',
+        serverDescription: 'A server for tests.',
+        serverIcons: [
+            [
+                'src' => 'https://example.com/icon.png',
+                'mimeType' => 'image/png',
+                'sizes' => ['48x48'],
+            ],
+        ],
+        serverWebsiteUrl: 'https://example.com',
+    );
+
+    $payload = (new Initialize)->handle($request, $context)->toArray();
+
+    expect($payload['result']['serverInfo'])->toBe([
+        'name' => 'test-server',
+        'version' => '1.0.0',
+        'title' => 'Test Server',
+        'description' => 'A server for tests.',
+        'icons' => [
+            [
+                'src' => 'https://example.com/icon.png',
+                'mimeType' => 'image/png',
+                'sizes' => ['48x48'],
+            ],
+        ],
+        'websiteUrl' => 'https://example.com',
+    ]);
+});
+
+it('omits richer implementation metadata for older protocol versions', function (): void {
+    $request = JsonRpcRequest::from([
+        'jsonrpc' => '2.0',
+        'id' => 1,
+        'method' => 'initialize',
+        'params' => [
+            'protocolVersion' => '2025-06-18',
+        ],
+    ]);
+
+    $context = new ServerContext(
+        supportedProtocolVersions: ['2025-11-25', '2025-06-18'],
+        serverCapabilities: [],
+        serverName: 'test-server',
+        serverVersion: '1.0.0',
+        instructions: 'Test instructions',
+        maxPaginationLength: 50,
+        defaultPaginationLength: 10,
+        tools: [],
+        resources: [],
+        prompts: [],
+        serverTitle: 'Test Server',
+        serverDescription: 'A server for tests.',
+        serverIcons: [
+            ['src' => 'https://example.com/icon.png'],
+        ],
+        serverWebsiteUrl: 'https://example.com',
+    );
+
+    $payload = (new Initialize)->handle($request, $context)->toArray();
+
+    expect($payload['result']['serverInfo'])->toBe([
+        'name' => 'test-server',
+        'version' => '1.0.0',
+    ]);
+});
+
 it('throws exception for unsupported protocol version', function (): void {
     $this->expectException(JsonRpcException::class);
     $this->expectExceptionMessage('Unsupported protocol version');

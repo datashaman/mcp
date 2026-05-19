@@ -10,11 +10,15 @@ use Laravel\Mcp\Enums\ProtocolVersion;
 use Laravel\Mcp\Events\SessionInitialized;
 use Laravel\Mcp\Exceptions\JsonRpcException;
 use Laravel\Mcp\Server\AppResource;
+use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\Name;
+use Laravel\Mcp\Server\Attributes\Title;
 use Laravel\Mcp\Server\Attributes\Version;
+use Laravel\Mcp\Server\Attributes\WebsiteUrl;
 use Laravel\Mcp\Server\Cancellation;
 use Laravel\Mcp\Server\ClientRequest;
+use Laravel\Mcp\Server\Concerns\HasIcons;
 use Laravel\Mcp\Server\Concerns\ReadsAttributes;
 use Laravel\Mcp\Server\Contracts\Method;
 use Laravel\Mcp\Server\Contracts\Transport;
@@ -54,6 +58,7 @@ use Throwable;
  */
 abstract class Server
 {
+    use HasIcons;
     use ReadsAttributes;
 
     public const CAPABILITY_TOOLS = 'tools';
@@ -77,6 +82,12 @@ abstract class Server
     protected string $name = 'Laravel MCP Server';
 
     protected string $version = '0.0.1';
+
+    protected string $title = '';
+
+    protected string $description = '';
+
+    protected string $websiteUrl = '';
 
     protected string $instructions = <<<'MARKDOWN'
         This MCP server lets AI agents interact with our Laravel application.
@@ -286,6 +297,9 @@ abstract class Server
     {
         $name = $this->resolveAttribute(Name::class);
         $version = $this->resolveAttribute(Version::class);
+        $title = $this->resolveAttribute(Title::class);
+        $description = $this->resolveAttribute(Description::class);
+        $websiteUrl = $this->resolveAttribute(WebsiteUrl::class);
         $instructions = $this->resolveAttribute(Instructions::class);
 
         return new ServerContext(
@@ -299,6 +313,10 @@ abstract class Server
             tools: $this->tools,
             resources: $this->resources,
             prompts: $this->prompts,
+            serverTitle: $title !== null ? $title->value : $this->title,
+            serverDescription: $description !== null ? $description->value : $this->description,
+            serverIcons: $this->icons(),
+            serverWebsiteUrl: $websiteUrl !== null ? $websiteUrl->value : $this->websiteUrl,
         );
     }
 

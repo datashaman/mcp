@@ -1,8 +1,11 @@
 <?php
 
+use Laravel\Mcp\Response;
 use Laravel\Mcp\Server;
+use Laravel\Mcp\Server\Cancellation;
 use Laravel\Mcp\Server\Contracts\Method;
 use Laravel\Mcp\Server\ServerContext;
+use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Transport\JsonRpcRequest;
 use Laravel\Mcp\Transport\JsonRpcResponse;
 use Tests\Fixtures\ArrayTransport;
@@ -96,6 +99,101 @@ it('can handle a notification message', function (): void {
     ($transport->handler)($payload);
 
     expect($transport->sent)->toHaveCount(0);
+});
+
+it('accepts cancellation notifications without sending a response', function (): void {
+    $transport = new ArrayTransport;
+    $server = new ExampleServer($transport);
+
+    $server->start();
+
+    ($transport->handler)(json_encode([
+        'jsonrpc' => '2.0',
+        'method' => 'notifications/cancelled',
+        'params' => [
+            'requestId' => 123,
+            'reason' => 'User requested cancellation',
+        ],
+    ]));
+
+    expect($transport->sent)->toHaveCount(0);
+});
+
+it('lets active request execution observe cancellation', function (): void {
+    $transport = new ArrayTransport;
+    $observed = (object) ['data' => []];
+
+    $server = new class($transport, $observed) extends Server
+    {
+        public function __construct(
+            ArrayTransport $transport,
+            protected object $observed,
+        ) {
+            parent::__construct($transport);
+        }
+
+        protected array $methods = [
+            'cancel/observe' => ObservesCancellationMethod::class,
+        ];
+
+        protected function boot(): void
+        {
+            app()->instance('test.transport', $this->transport);
+            app()->instance('test.observed', $this->observed);
+        }
+    };
+
+    $server->start();
+
+    ($transport->handler)(json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 456,
+        'method' => 'cancel/observe',
+        'params' => [],
+    ]));
+
+    expect($observed->data)->toBe([
+        'before' => false,
+        'after' => true,
+        'reason' => 'No longer needed',
+    ])->and($transport->sent)->toHaveCount(0);
+});
+
+it('stops streaming responses after cancellation is observed', function (): void {
+    $transport = new ArrayTransport;
+
+    $server = new class($transport) extends Server
+    {
+        protected array $tools = [
+            CancellingStreamingTool::class,
+        ];
+
+        protected function boot(): void
+        {
+            app()->instance('test.transport', $this->transport);
+        }
+    };
+
+    $server->start();
+
+    ($transport->handler)(json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 789,
+        'method' => 'tools/call',
+        'params' => [
+            'name' => 'cancelling-streaming-tool',
+            'arguments' => [],
+        ],
+    ]));
+
+    $messages = array_map(fn (string $message): mixed => json_decode($message, true), $transport->sent);
+
+    expect($messages)->toHaveCount(1)
+        ->and($messages[0])->toEqual([
+            'jsonrpc' => '2.0',
+            'method' => 'notifications/progress',
+            'params' => ['progress' => 50],
+        ]);
 });
 
 it('can handle an unknown method', function (): void {
@@ -321,3 +419,58 @@ it('handles exceptions in production mode', function (): void {
         ],
     ]);
 });
+
+class ObservesCancellationMethod implements Method
+{
+    public function handle(JsonRpcRequest $request, ServerContext $context): JsonRpcResponse
+    {
+        /** @var Cancellation $cancellation */
+        $cancellation = app(Cancellation::class);
+
+        /** @var object{data: array<string, mixed>} $observed */
+        $observed = app('test.observed');
+
+        /** @var ArrayTransport $transport */
+        $transport = app('test.transport');
+
+        $observed->data['before'] = $cancellation->cancelled();
+
+        ($transport->handler)(json_encode([
+            'jsonrpc' => '2.0',
+            'method' => 'notifications/cancelled',
+            'params' => [
+                'requestId' => $request->id,
+                'reason' => 'No longer needed',
+            ],
+        ]));
+
+        $observed->data['after'] = $cancellation->cancelled();
+        $observed->data['reason'] = $cancellation->reason();
+
+        return JsonRpcResponse::result($request->id, ['ok' => true]);
+    }
+}
+
+class CancellingStreamingTool extends Tool
+{
+    protected string $name = 'cancelling-streaming-tool';
+
+    public function handle(): Generator
+    {
+        yield Response::notification('notifications/progress', ['progress' => 50]);
+
+        /** @var ArrayTransport $transport */
+        $transport = app('test.transport');
+
+        ($transport->handler)(json_encode([
+            'jsonrpc' => '2.0',
+            'method' => 'notifications/cancelled',
+            'params' => [
+                'requestId' => 789,
+                'reason' => 'Stream no longer needed',
+            ],
+        ]));
+
+        yield Response::text('This should not be sent.');
+    }
+}

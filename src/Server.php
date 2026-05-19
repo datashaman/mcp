@@ -13,6 +13,7 @@ use Laravel\Mcp\Server\AppResource;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\Name;
 use Laravel\Mcp\Server\Attributes\Version;
+use Laravel\Mcp\Server\Cancellation;
 use Laravel\Mcp\Server\ClientRequest;
 use Laravel\Mcp\Server\Concerns\ReadsAttributes;
 use Laravel\Mcp\Server\Contracts\Method;
@@ -120,6 +121,8 @@ abstract class Server
      */
     protected ?string $protocolVersion = null;
 
+    protected ?Cancellation $cancellation = null;
+
     public int $maxPaginationLength = 50;
 
     public int $defaultPaginationLength = 15;
@@ -185,6 +188,7 @@ abstract class Server
     {
         $this->boot();
         $this->detectUiCapability();
+        Container::getInstance()->instance(Cancellation::class, $this->cancellation());
 
         $this->transport->onReceive($this->handle(...));
     }
@@ -221,6 +225,8 @@ abstract class Server
                 : JsonRpcNotification::from($jsonRequest);
 
             if ($request instanceof JsonRpcNotification) {
+                $this->handleNotification($request);
+
                 return;
             }
 
@@ -285,19 +291,72 @@ abstract class Server
      */
     protected function handleMessage(JsonRpcRequest $request, ServerContext $context): void
     {
-        $response = $this->runMethodHandle($request, $context);
+        $cancellation = $this->cancellation();
+        $cancellation->start($request->id);
 
-        if (! is_iterable($response)) {
-            $this->transport->send($response->toJson());
+        try {
+            $response = $this->runMethodHandle($request, $context);
+        } catch (Throwable $throwable) {
+            $cancellation->finish($request->id);
+
+            throw $throwable;
+        }
+
+        if ($cancellation->cancelled($request->id)) {
+            $cancellation->finish($request->id);
 
             return;
         }
 
-        $this->transport->stream(function () use ($response): void {
-            foreach ($response as $message) {
-                $this->transport->send($message->toJson());
+        if (! is_iterable($response)) {
+            try {
+                $this->transport->send($response->toJson());
+            } finally {
+                $cancellation->finish($request->id);
+            }
+
+            return;
+        }
+
+        $this->transport->stream(function () use ($response, $request, $cancellation): void {
+            try {
+                foreach ($response as $message) {
+                    if (connection_aborted() !== 0) {
+                        $cancellation->cancel($request->id, 'Client disconnected.');
+
+                        return;
+                    }
+
+                    if ($cancellation->cancelled($request->id)) {
+                        return;
+                    }
+
+                    $this->transport->send($message->toJson());
+                }
+            } finally {
+                $cancellation->finish($request->id);
             }
         });
+    }
+
+    protected function handleNotification(JsonRpcNotification $notification): void
+    {
+        if ($notification->method !== 'notifications/cancelled') {
+            return;
+        }
+
+        $requestId = $notification->params['requestId'] ?? null;
+
+        if (! is_int($requestId) && ! is_string($requestId)) {
+            return;
+        }
+
+        $reason = $notification->params['reason'] ?? null;
+
+        $this->cancellation()->cancel(
+            $requestId,
+            is_string($reason) ? $reason : null,
+        );
     }
 
     /**
@@ -415,6 +474,11 @@ abstract class Server
     protected function serverNotification(string $class): ServerNotification
     {
         return new $class($this->transport);
+    }
+
+    protected function cancellation(): Cancellation
+    {
+        return $this->cancellation ??= new Cancellation;
     }
 
     /**

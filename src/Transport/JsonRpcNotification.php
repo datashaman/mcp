@@ -35,7 +35,7 @@ class JsonRpcNotification
 
         return new static(
             method: $jsonRequest['method'],
-            params: $jsonRequest['params'] ?? []
+            params: is_array($jsonRequest['params'] ?? []) ? ($jsonRequest['params'] ?? []) : []
         );
     }
 }

@@ -19,6 +19,8 @@ use Laravel\Mcp\Server\Concerns\ReadsAttributes;
 use Laravel\Mcp\Server\Contracts\Method;
 use Laravel\Mcp\Server\Contracts\Transport;
 use Laravel\Mcp\Server\Elicitation\Elicitation;
+use Laravel\Mcp\Server\Logging\Logging;
+use Laravel\Mcp\Server\Logging\LogLevel;
 use Laravel\Mcp\Server\Methods\CallTool;
 use Laravel\Mcp\Server\Methods\CompletionComplete;
 use Laravel\Mcp\Server\Methods\GetPrompt;
@@ -67,6 +69,8 @@ abstract class Server
     public const CAPABILITY_ELICITATION = 'elicitation';
 
     public const CAPABILITY_ROOTS = 'roots';
+
+    public const CAPABILITY_LOGGING = 'logging';
 
     public const CAPABILITY_UI = 'io.modelcontextprotocol/ui';
 
@@ -126,6 +130,8 @@ abstract class Server
     protected ?string $protocolVersion = null;
 
     protected ?Cancellation $cancellation = null;
+
+    protected ?string $loggingLevel = null;
 
     public int $maxPaginationLength = 50;
 
@@ -236,6 +242,12 @@ abstract class Server
 
             if ($request->method === 'initialize') {
                 $this->handleInitializeMessage($request, $context);
+
+                return;
+            }
+
+            if ($request->method === 'logging/setLevel') {
+                $this->handleLoggingSetLevelMessage($request, $context);
 
                 return;
             }
@@ -415,6 +427,13 @@ abstract class Server
         );
         $container->instance(Roots::class, $roots);
 
+        $logging = new Logging(
+            $this->transport,
+            enabled: array_key_exists(self::CAPABILITY_LOGGING, $context->serverCapabilities),
+            threshold: $this->resolveLoggingLevel(),
+        );
+        $container->instance(Logging::class, $logging);
+
         $container->instance(ProgressNotification::class, new ProgressNotification($this->transport));
 
         try {
@@ -424,10 +443,48 @@ abstract class Server
             $container->forgetInstance(Sampling::class);
             $container->forgetInstance(Elicitation::class);
             $container->forgetInstance(Roots::class);
+            $container->forgetInstance(Logging::class);
             $container->forgetInstance(ProgressNotification::class);
         }
 
         return $response;
+    }
+
+    /**
+     * @throws JsonRpcException
+     */
+    protected function handleLoggingSetLevelMessage(JsonRpcRequest $request, ServerContext $context): void
+    {
+        if (! array_key_exists(self::CAPABILITY_LOGGING, $context->serverCapabilities)) {
+            throw new JsonRpcException(
+                "The method [{$request->method}] was not found.",
+                -32601,
+                $request->id,
+            );
+        }
+
+        $level = $request->params['level'] ?? null;
+
+        if (! is_string($level) || ! LogLevel::isValid($level)) {
+            throw new JsonRpcException(
+                'Invalid logging level.',
+                -32602,
+                $request->id,
+                ['levels' => array_keys(LogLevel::LEVELS)],
+            );
+        }
+
+        $this->loggingLevel = $level;
+
+        if ($this->transport instanceof HttpTransport && ($sessionId = $this->transport->sessionId()) !== null) {
+            Container::getInstance()->make('cache')->put(
+                $this->loggingLevelCacheKey($sessionId),
+                $level,
+                $this->httpSessionTtl(),
+            );
+        }
+
+        $this->transport->send(JsonRpcResponse::result($request->id, [])->toJson());
     }
 
     protected function handleInitializeMessage(JsonRpcRequest $request, ServerContext $context): void
@@ -578,6 +635,25 @@ abstract class Server
         return $this->protocolVersion ?? $context->supportedProtocolVersions[0];
     }
 
+    protected function resolveLoggingLevel(): string
+    {
+        $sessionId = $this->transport->sessionId();
+
+        if ($this->transport instanceof HttpTransport && $sessionId !== null) {
+            try {
+                $level = Container::getInstance()->make('cache')->get($this->loggingLevelCacheKey($sessionId));
+            } catch (Throwable) {
+                return $this->loggingLevel ?? LogLevel::DEFAULT;
+            }
+
+            if (is_string($level) && LogLevel::isValid($level)) {
+                return $level;
+            }
+        }
+
+        return $this->loggingLevel ?? LogLevel::DEFAULT;
+    }
+
     /**
      * Persist the negotiated client capabilities and protocol version so subsequent
      * stateless HTTP requests can resolve them.
@@ -615,6 +691,11 @@ abstract class Server
     protected function protocolVersionCacheKey(string $sessionId): string
     {
         return "mcp:session:{$sessionId}:protocolVersion";
+    }
+
+    protected function loggingLevelCacheKey(string $sessionId): string
+    {
+        return "mcp:session:{$sessionId}:loggingLevel";
     }
 
     protected function generateSessionId(): string

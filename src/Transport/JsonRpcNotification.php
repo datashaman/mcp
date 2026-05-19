@@ -19,7 +19,7 @@ class JsonRpcNotification
     }
 
     /**
-     * @param  array{jsonrpc?: mixed, method?: mixed, params?: array<string, mixed>}  $jsonRequest
+     * @param  array{jsonrpc?: mixed, method?: mixed, params?: mixed}  $jsonRequest
      *
      * @throws JsonRpcException
      */
@@ -35,7 +35,7 @@ class JsonRpcNotification
 
         return new static(
             method: $jsonRequest['method'],
-            params: $jsonRequest['params'] ?? []
+            params: JsonRpcParams::from($jsonRequest['params'] ?? null),
         );
     }
 }

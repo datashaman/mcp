@@ -55,9 +55,6 @@ class Tasks
 
     /**
      * @param  array<string, mixed>  $result
-     */
-    /**
-     * @param  array<string, mixed>  $result
      * @return array<string, mixed>
      */
     public function complete(string $taskId, array $result, ?string $statusMessage = null, bool $failed = false): array
@@ -74,6 +71,16 @@ class Tasks
      */
     public function cancel(string $taskId, ?string $reason = null): array
     {
+        $task = $this->getTaskWithPayload($taskId);
+
+        if (in_array($task['status'] ?? null, [TaskStatus::COMPLETED, TaskStatus::FAILED], true)) {
+            throw new JsonRpcException("Task [{$taskId}] is already terminal and cannot be cancelled.", -32002);
+        }
+
+        if (($task['status'] ?? null) === TaskStatus::CANCELLED) {
+            return $this->publicTask($task);
+        }
+
         return $this->update($taskId, [
             'status' => TaskStatus::CANCELLED,
             'statusMessage' => $reason,
@@ -133,21 +140,15 @@ class Tasks
 
     /**
      * @param  array<string, mixed>  $updates
-     */
-    /**
-     * @param  array<string, mixed>  $updates
      * @return array<string, mixed>
      */
     protected function update(string $taskId, array $updates): array
     {
         $tasks = $this->allWithPayloads();
-
-        if (! isset($tasks[$taskId])) {
-            throw new JsonRpcException("Task [{$taskId}] not found.", -32002);
-        }
+        $existing = $this->getTaskWithPayload($taskId, $tasks);
 
         $task = [
-            ...$tasks[$taskId],
+            ...$existing,
             ...array_filter($updates, static fn (mixed $value): bool => $value !== null),
             'lastUpdatedAt' => $this->timestamp(),
         ];
@@ -156,6 +157,21 @@ class Tasks
         $this->store($tasks);
 
         return $this->publicTask($task);
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>|null  $tasks
+     * @return array<string, mixed>
+     */
+    protected function getTaskWithPayload(string $taskId, ?array $tasks = null): array
+    {
+        $tasks ??= $this->allWithPayloads();
+
+        if (! isset($tasks[$taskId])) {
+            throw new JsonRpcException("Task [{$taskId}] not found.", -32002);
+        }
+
+        return $tasks[$taskId];
     }
 
     /**

@@ -92,11 +92,7 @@ class CallTool implements Errable, Method
 
         $result = is_iterable($response)
             ? $this->collectTaskResult($request, $response, $this->serializable($tool))
-            : $this->toJsonRpcResponse($request, $response, $this->serializable($tool))->toArray()['result'];
-
-        if (! is_array($result)) {
-            throw new JsonRpcException('Invalid task result.', -32603, $request->id);
-        }
+            : $this->taskResultFromResponse($request, $response, $this->serializable($tool));
 
         $task = $tasks->complete(
             taskId: $task['taskId'],
@@ -144,6 +140,31 @@ class CallTool implements Errable, Method
         }
 
         return $result;
+    }
+
+    /**
+     * @param  Response|ResponseFactory|array<int, Response|ResponseFactory|string>|string  $response
+     * @return array<string, mixed>
+     */
+    protected function taskResultFromResponse(JsonRpcRequest $request, Response|ResponseFactory|array|string $response, callable $serializable): array
+    {
+        $payload = $this->toJsonRpcResponse($request, $response, $serializable)->toArray();
+
+        if (isset($payload['result']) && is_array($payload['result'])) {
+            return $payload['result'];
+        }
+
+        if (isset($payload['error']) && is_array($payload['error'])) {
+            return [
+                'content' => [[
+                    'type' => 'text',
+                    'text' => is_string($payload['error']['message'] ?? null) ? $payload['error']['message'] : 'Tool call failed.',
+                ]],
+                'isError' => true,
+            ];
+        }
+
+        throw new JsonRpcException('Invalid task result.', -32603, $request->id);
     }
 
     /**

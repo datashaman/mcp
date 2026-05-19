@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use Laravel\Mcp\Server\Notifications\ProgressNotification;
+use Laravel\Mcp\Server\Notifications\PromptListChangedNotification;
+use Laravel\Mcp\Server\Notifications\ResourceListChangedNotification;
+use Laravel\Mcp\Server\Notifications\ToolListChangedNotification;
 use Laravel\Mcp\Server\Transport\FakeTransporter;
 use Tests\Fixtures\FakeServerNotification;
 
@@ -55,3 +58,21 @@ it('includes total and message when supplied', function (): void {
         'message' => 'Halfway there',
     ]);
 });
+
+it('builds primitive list changed notifications', function (string $class, string $method): void {
+    $transport = new FakeTransporter;
+
+    (new $class($transport))->send();
+
+    $sent = json_decode($transport->sentNotifications()[0], true);
+
+    expect($sent)->toBe([
+        'jsonrpc' => '2.0',
+        'method' => $method,
+        'params' => [],
+    ]);
+})->with([
+    'tools' => [ToolListChangedNotification::class, 'notifications/tools/list_changed'],
+    'resources' => [ResourceListChangedNotification::class, 'notifications/resources/list_changed'],
+    'prompts' => [PromptListChangedNotification::class, 'notifications/prompts/list_changed'],
+]);

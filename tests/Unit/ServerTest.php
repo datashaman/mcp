@@ -87,6 +87,23 @@ it('can advertise the resource subscription capability', function (): void {
     expect($response['result']['capabilities']['resources']['subscribe'])->toBeTrue();
 });
 
+it('can advertise primitive list changed capabilities independently', function (): void {
+    $transport = new ArrayTransport;
+    $server = new ExampleServer($transport);
+    $server->addCapability('tools.listChanged', true);
+    $server->addCapability('resources.listChanged', true);
+
+    $server->start();
+
+    ($transport->handler)(json_encode(initializeMessage()));
+
+    $response = json_decode((string) $transport->sent[0], true);
+
+    expect($response['result']['capabilities']['tools']['listChanged'])->toBeTrue()
+        ->and($response['result']['capabilities']['resources']['listChanged'])->toBeTrue()
+        ->and($response['result']['capabilities']['prompts']['listChanged'])->toBeFalse();
+});
+
 it('handles resource subscription methods and update notifications', function (): void {
     $transport = new ArrayTransport;
     $server = new ExampleServer($transport);

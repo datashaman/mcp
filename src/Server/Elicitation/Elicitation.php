@@ -69,6 +69,8 @@ class Elicitation extends ClientRequest
      */
     public function notifyComplete(string $elicitationId): void
     {
+        $this->ensureCapability('url');
+
         $this->transport->sendNotification(JsonRpcResponse::notification(
             method: 'notifications/elicitation/complete',
             params: ['elicitationId' => $elicitationId],

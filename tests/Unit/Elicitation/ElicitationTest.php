@@ -111,6 +111,13 @@ it('sends a completion notification', function (): void {
     expect($decoded['params']['elicitationId'])->toBe('elicit-123');
 });
 
+it('rejects completion notifications when url elicitation is not supported', function (): void {
+    $transport = new FakeTransporter;
+
+    $elicitation = new Elicitation($transport, ['elicitation' => ['form' => []]]);
+    $elicitation->notifyComplete('elicit-123');
+})->throws(JsonRpcException::class, 'Client does not support elicitation mode [url].');
+
 it('handles declined response', function (): void {
     $transport = new FakeTransporter;
     $transport->expectElicitation(['action' => 'decline']);

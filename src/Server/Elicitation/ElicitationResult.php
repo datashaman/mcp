@@ -33,7 +33,7 @@ class ElicitationResult
 
     public function get(string $key, mixed $default = null): mixed
     {
-        return $this->content[$key] ?? $default;
+        return ($this->content ?? [])[$key] ?? $default;
     }
 
     /**

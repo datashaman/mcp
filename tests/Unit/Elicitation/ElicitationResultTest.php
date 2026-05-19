@@ -44,6 +44,13 @@ it('can get all content', function (): void {
     expect($result->all())->toBe(['name' => 'Taylor']);
 });
 
+it('returns default values when reading null content', function (): void {
+    $result = new ElicitationResult('decline');
+
+    expect($result->get('missing'))->toBeNull()
+        ->and($result->get('missing', 'default'))->toBe('default');
+});
+
 it('returns empty array when content is null', function (): void {
     $result = new ElicitationResult('decline');
 

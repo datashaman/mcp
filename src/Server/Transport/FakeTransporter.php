@@ -84,6 +84,13 @@ class FakeTransporter implements Transport
     public function sendRequest(string $message): string
     {
         $request = json_decode($message, true);
+
+        if (! is_array($request)
+            || (! is_int($request['id'] ?? null) && ! is_string($request['id'] ?? null))
+            || ! is_string($request['method'] ?? null)) {
+            throw new LogicException('Invalid JSON-RPC request message.');
+        }
+
         $this->sentRequests[] = $request;
 
         if ($this->queuedResponses === []) {

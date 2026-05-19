@@ -27,6 +27,20 @@ it('throws when sending a notification without a streaming response', function (
         ->toThrow(JsonRpcException::class);
 });
 
+it('throws when sending an invalid request message', function (): void {
+    $transport = new HttpTransport(request(), 'test-session', streamingResponse: true);
+
+    expect(fn (): string => $transport->sendRequest('not-json'))
+        ->toThrow(JsonRpcException::class, 'Invalid server-to-client request: JSON-RPC id is required.');
+});
+
+it('throws when sending a request without a session id', function (): void {
+    $transport = new HttpTransport(request(), '', streamingResponse: true);
+
+    expect(fn (): string => $transport->sendRequest('{"jsonrpc":"2.0","id":"request-1","method":"demo","params":{}}'))
+        ->toThrow(JsonRpcException::class, 'A server-to-client request requires a non-empty MCP session id.');
+});
+
 it('streams iterable responses returned from the stream callback', function (): void {
     $transport = new HttpTransport(request(), 'test-session');
 

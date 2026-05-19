@@ -149,9 +149,18 @@ class HttpTransport implements Transport
             throw new JsonRpcException('A server-to-client request requires a text/event-stream response. Send the request with Accept: text/event-stream.', -32603);
         }
 
+        $decoded = json_decode($message, true);
+
+        if (! is_array($decoded) || (! is_int($decoded['id'] ?? null) && ! is_string($decoded['id'] ?? null))) {
+            throw new JsonRpcException('Invalid server-to-client request: JSON-RPC id is required.', -32603);
+        }
+
+        if ($this->sessionId === '') {
+            throw new JsonRpcException('A server-to-client request requires a non-empty MCP session id.', -32603);
+        }
+
         $this->sendStreamMessage($message);
 
-        $decoded = json_decode($message, true);
         $requestId = $decoded['id'];
         $cacheKey = "mcp:response:{$this->sessionId}:{$requestId}";
 

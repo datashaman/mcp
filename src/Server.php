@@ -353,7 +353,7 @@ abstract class Server
         $this->clientCapabilities = $request->params['capabilities'] ?? [];
         $this->protocolVersion = $response->toArray()['result']['protocolVersion'] ?? null;
 
-        if ($this->transport instanceof HttpTransport && $this->clientCapabilities !== []) {
+        if ($this->transport instanceof HttpTransport) {
             $this->storeHttpSessionState($sessionId);
         }
 

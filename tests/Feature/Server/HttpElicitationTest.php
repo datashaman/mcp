@@ -143,6 +143,21 @@ it('uses the initialized protocol version when later http requests omit the prot
     }
 });
 
+it('persists initialized http protocol version with empty client capabilities', function (): void {
+    config()->set('cache.default', 'array');
+
+    app(Registrar::class)->web('test-mcp-elicit-empty-capabilities', HttpElicitationServer::class);
+
+    $sessionId = initializeHttpElicitationConnection(
+        $this,
+        'test-mcp-elicit-empty-capabilities',
+        '2025-06-18',
+        [],
+    );
+
+    expect(cache()->get("mcp:session:{$sessionId}:protocolVersion"))->toBe('2025-06-18');
+});
+
 it('stores initialized http session metadata longer than the elicitation response timeout', function (): void {
     config()->set('cache.default', 'array');
     config()->set('mcp.http_session_ttl', 600);

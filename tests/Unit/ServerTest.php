@@ -6,6 +6,7 @@ use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Cancellation;
 use Laravel\Mcp\Server\Contracts\Method;
 use Laravel\Mcp\Server\ServerContext;
+use Laravel\Mcp\Server\Tasks\Tasks;
 use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Transport\HttpTransport;
 use Laravel\Mcp\Transport\JsonRpcRequest;
@@ -102,6 +103,145 @@ it('can advertise primitive list changed capabilities independently', function (
     expect($response['result']['capabilities']['tools']['listChanged'])->toBeTrue()
         ->and($response['result']['capabilities']['resources']['listChanged'])->toBeTrue()
         ->and($response['result']['capabilities']['prompts']['listChanged'])->toBeFalse();
+});
+
+it('can advertise experimental task capabilities', function (): void {
+    $transport = new ArrayTransport;
+    $server = new ExampleServer($transport);
+    $server->addCapability('tasks.cancel', (object) []);
+    $server->addCapability('tasks.list', (object) []);
+    $server->addCapability('tasks.requests.tools.call', (object) []);
+
+    $server->start();
+
+    ($transport->handler)(json_encode(initializeMessage()));
+
+    $response = json_decode((string) $transport->sent[0], true);
+
+    expect($response['result']['capabilities']['tasks'])->toBe([
+        'cancel' => [],
+        'list' => [],
+        'requests' => [
+            'tools' => [
+                'call' => [],
+            ],
+        ],
+    ]);
+});
+
+it('creates observes and resolves a task augmented tool call', function (): void {
+    $transport = new ArrayTransport;
+    $server = new ExampleServer($transport);
+    $server->addCapability('tasks.cancel', (object) []);
+    $server->addCapability('tasks.list', (object) []);
+    $server->addCapability('tasks.requests.tools.call', (object) []);
+
+    $server->start();
+
+    ($transport->handler)(json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 41,
+        'method' => 'tools/call',
+        'params' => [
+            'name' => 'say-hi-tool',
+            'arguments' => [
+                'name' => 'Ada',
+            ],
+            'task' => [
+                'ttl' => 30000,
+            ],
+        ],
+    ]));
+
+    $created = json_decode((string) $transport->sent[2], true);
+    $task = $created['result']['task'];
+
+    expect(json_decode((string) $transport->sent[0], true)['method'])->toBe('notifications/tasks/status')
+        ->and(json_decode((string) $transport->sent[1], true)['method'])->toBe('notifications/tasks/status')
+        ->and($task['status'])->toBe('completed')
+        ->and($task['ttl'])->toBe(30000)
+        ->and($task)->toHaveKeys(['taskId', 'createdAt', 'lastUpdatedAt']);
+
+    ($transport->handler)(json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 42,
+        'method' => 'tasks/get',
+        'params' => [
+            'taskId' => $task['taskId'],
+        ],
+    ]));
+
+    ($transport->handler)(json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 43,
+        'method' => 'tasks/result',
+        'params' => [
+            'taskId' => $task['taskId'],
+        ],
+    ]));
+
+    ($transport->handler)(json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 44,
+        'method' => 'tasks/list',
+    ]));
+
+    $get = json_decode((string) $transport->sent[3], true);
+    $result = json_decode((string) $transport->sent[4], true);
+    $list = json_decode((string) $transport->sent[5], true);
+
+    expect($get['result']['taskId'])->toBe($task['taskId'])
+        ->and($get['result']['status'])->toBe('completed')
+        ->and($result['result'])->toBe([
+            'content' => [[
+                'type' => 'text',
+                'text' => 'Hello, Ada!',
+            ]],
+            'isError' => false,
+        ])
+        ->and($list['result']['tasks'][0]['taskId'])->toBe($task['taskId']);
+});
+
+it('cancels a working task through the tasks protocol surface', function (): void {
+    $transport = new ArrayTransport;
+    $server = new ExampleServer($transport);
+    $server->addCapability('tasks.cancel', (object) []);
+    $server->addMethod('test/create-task', CreateWorkingTaskMethod::class);
+
+    $server->start();
+
+    ($transport->handler)(json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 51,
+        'method' => 'test/create-task',
+        'params' => [
+            'task' => [
+                'ttl' => 30000,
+            ],
+        ],
+    ]));
+
+    $created = json_decode((string) $transport->sent[0], true);
+    $taskId = $created['result']['task']['taskId'];
+
+    ($transport->handler)(json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 52,
+        'method' => 'tasks/cancel',
+        'params' => [
+            'taskId' => $taskId,
+            'reason' => 'No longer needed',
+        ],
+    ]));
+
+    $notification = json_decode((string) $transport->sent[1], true);
+    $cancelled = json_decode((string) $transport->sent[2], true);
+
+    expect($notification['method'])->toBe('notifications/tasks/status')
+        ->and($notification['params']['status'])->toBe('cancelled')
+        ->and($cancelled['result']['taskId'])->toBe($taskId)
+        ->and($cancelled['result']['status'])->toBe('cancelled')
+        ->and($cancelled['result']['statusMessage'])->toBe('No longer needed');
 });
 
 it('handles resource subscription methods and update notifications', function (): void {
@@ -705,6 +845,24 @@ class ThrowsAfterCancellationMethod implements Method
         ]));
 
         throw new Exception('This should be suppressed.');
+    }
+}
+
+class CreateWorkingTaskMethod implements Method
+{
+    public function handle(JsonRpcRequest $request, ServerContext $context): JsonRpcResponse
+    {
+        /** @var Tasks $tasks */
+        $tasks = app(Tasks::class);
+
+        $taskMetadata = $request->params['task'] ?? [];
+        $ttl = is_array($taskMetadata) && is_int($taskMetadata['ttl'] ?? null)
+            ? $taskMetadata['ttl']
+            : null;
+
+        return JsonRpcResponse::result($request->id, [
+            'task' => $tasks->create($ttl),
+        ]);
     }
 }
 

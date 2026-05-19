@@ -70,7 +70,7 @@ class ResourceSubscriptions
     {
         $sessionId = $this->transport->sessionId();
 
-        if ($this->transport instanceof HttpTransport && $sessionId !== null) {
+        if ($this->transport instanceof HttpTransport && $sessionId !== null && $sessionId !== '') {
             try {
                 $subscriptions = Container::getInstance()->make('cache')->get($this->cacheKey($sessionId));
             } catch (Throwable) {
@@ -97,7 +97,7 @@ class ResourceSubscriptions
 
         $sessionId = $this->transport->sessionId();
 
-        if (! $this->transport instanceof HttpTransport || $sessionId === null) {
+        if (! $this->transport instanceof HttpTransport || $sessionId === null || $sessionId === '') {
             return;
         }
 

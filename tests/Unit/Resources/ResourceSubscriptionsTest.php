@@ -71,3 +71,22 @@ it('persists resource subscriptions per http session', function (): void {
     expect($reloaded->subscribedTo('file:///project'))->toBeTrue()
         ->and($second->subscribedTo('file:///project'))->toBeFalse();
 });
+
+it('does not cache resource subscriptions for empty http session ids', function (): void {
+    $firstStore = [];
+    $secondStore = [];
+
+    $first = new ResourceSubscriptions(
+        new HttpTransport(HttpRequest::create('/mcp', 'POST'), ''),
+        $firstStore,
+    );
+    $second = new ResourceSubscriptions(
+        new HttpTransport(HttpRequest::create('/mcp', 'POST'), ''),
+        $secondStore,
+    );
+
+    $first->subscribe('file:///project');
+
+    expect($first->subscribedTo('file:///project'))->toBeTrue()
+        ->and($second->subscribedTo('file:///project'))->toBeFalse();
+});

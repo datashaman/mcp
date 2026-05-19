@@ -1,11 +1,13 @@
 <?php
 
+use Illuminate\Http\Request as HttpRequest;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Cancellation;
 use Laravel\Mcp\Server\Contracts\Method;
 use Laravel\Mcp\Server\ServerContext;
 use Laravel\Mcp\Server\Tool;
+use Laravel\Mcp\Server\Transport\HttpTransport;
 use Laravel\Mcp\Transport\JsonRpcRequest;
 use Laravel\Mcp\Transport\JsonRpcResponse;
 use Tests\Fixtures\ArrayTransport;
@@ -53,6 +55,110 @@ it('can add a capability', function (): void {
     ]));
 
     $this->assertStringContainsString($expectedCapabilitiesJson, $jsonResponse);
+});
+
+it('can advertise the logging capability', function (): void {
+    $transport = new ArrayTransport;
+    $server = new ExampleServer($transport);
+    $server->addCapability(Server::CAPABILITY_LOGGING);
+
+    $server->start();
+
+    ($transport->handler)(json_encode(initializeMessage()));
+
+    $response = json_decode((string) $transport->sent[0], true);
+
+    expect($response['result']['capabilities'])->toHaveKey(Server::CAPABILITY_LOGGING)
+        ->and($response['result']['capabilities'][Server::CAPABILITY_LOGGING])->toBe([]);
+});
+
+it('handles logging set level requests', function (): void {
+    $transport = new ArrayTransport;
+    $server = new ExampleServer($transport);
+    $server->addCapability(Server::CAPABILITY_LOGGING);
+
+    $server->start();
+
+    ($transport->handler)(json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 7,
+        'method' => 'logging/setLevel',
+        'params' => ['level' => 'warning'],
+    ]));
+
+    $response = json_decode((string) $transport->sent[0], true);
+    $level = new ReflectionMethod($server, 'resolveLoggingLevel')->invoke($server);
+
+    expect($response)->toBe([
+        'jsonrpc' => '2.0',
+        'id' => 7,
+        'result' => [],
+    ])->and($level)->toBe('warning');
+});
+
+it('rejects invalid logging set level requests', function (): void {
+    $transport = new ArrayTransport;
+    $server = new ExampleServer($transport);
+    $server->addCapability(Server::CAPABILITY_LOGGING);
+
+    $server->start();
+
+    ($transport->handler)(json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 8,
+        'method' => 'logging/setLevel',
+        'params' => ['level' => 'verbose'],
+    ]));
+
+    $response = json_decode((string) $transport->sent[0], true);
+
+    expect($response['id'])->toBe(8)
+        ->and($response['error']['code'])->toBe(-32602)
+        ->and($response['error']['message'])->toBe('Invalid logging level.')
+        ->and($response['error']['data']['levels'])->toContain('debug', 'emergency');
+});
+
+it('rejects logging set level when the server has no logging capability', function (): void {
+    $transport = new ArrayTransport;
+    $server = new ExampleServer($transport);
+
+    $server->start();
+
+    ($transport->handler)(json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 9,
+        'method' => 'logging/setLevel',
+        'params' => ['level' => 'error'],
+    ]));
+
+    $response = json_decode((string) $transport->sent[0], true);
+
+    expect($response['id'])->toBe(9)
+        ->and($response['error']['code'])->toBe(-32601);
+});
+
+it('persists logging set level for http sessions', function (): void {
+    $sessionId = 'logging-session';
+    $request = HttpRequest::create('/mcp', 'POST', content: json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 10,
+        'method' => 'logging/setLevel',
+        'params' => ['level' => 'error'],
+    ]));
+
+    $transport = new HttpTransport($request, $sessionId);
+    $server = new ExampleServer($transport);
+    $server->addCapability(Server::CAPABILITY_LOGGING);
+    $server->start();
+
+    $transport->run();
+
+    $nextTransport = new HttpTransport(HttpRequest::create('/mcp', 'POST'), $sessionId);
+    $nextServer = new ExampleServer($nextTransport);
+
+    $level = new ReflectionMethod($nextServer, 'resolveLoggingLevel')->invoke($nextServer);
+
+    expect($level)->toBe('error');
 });
 
 it('can handle a list tools message', function (): void {

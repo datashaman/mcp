@@ -38,6 +38,9 @@ use Laravel\Mcp\Server\Methods\ReadResource;
 use Laravel\Mcp\Server\Methods\SubscribeResource;
 use Laravel\Mcp\Server\Methods\UnsubscribeResource;
 use Laravel\Mcp\Server\Notifications\ProgressNotification;
+use Laravel\Mcp\Server\Notifications\PromptListChangedNotification;
+use Laravel\Mcp\Server\Notifications\ResourceListChangedNotification;
+use Laravel\Mcp\Server\Notifications\ToolListChangedNotification;
 use Laravel\Mcp\Server\Prompt;
 use Laravel\Mcp\Server\Resource;
 use Laravel\Mcp\Server\Resources\ResourceSubscriptions;
@@ -469,6 +472,9 @@ abstract class Server
             $resourceSubscriptions,
         ));
 
+        $container->instance(ToolListChangedNotification::class, new ToolListChangedNotification($this->transport));
+        $container->instance(ResourceListChangedNotification::class, new ResourceListChangedNotification($this->transport));
+        $container->instance(PromptListChangedNotification::class, new PromptListChangedNotification($this->transport));
         $container->instance(ProgressNotification::class, new ProgressNotification($this->transport));
 
         /** @var Method $methodClass */
@@ -486,6 +492,9 @@ abstract class Server
             $container->forgetInstance(Logging::class);
             $container->forgetInstance(ResourceSubscriptions::class);
             $container->forgetInstance(ResourceUpdatedNotification::class);
+            $container->forgetInstance(ToolListChangedNotification::class);
+            $container->forgetInstance(ResourceListChangedNotification::class);
+            $container->forgetInstance(PromptListChangedNotification::class);
             $container->forgetInstance(ProgressNotification::class);
         }
 

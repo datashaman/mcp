@@ -159,6 +159,33 @@ it('lets active request execution observe cancellation', function (): void {
     ])->and($transport->sent)->toHaveCount(0);
 });
 
+it('does not send an error when a cancelled request throws', function (): void {
+    $transport = new ArrayTransport;
+
+    $server = new class($transport) extends Server
+    {
+        protected array $methods = [
+            'cancel/throw' => ThrowsAfterCancellationMethod::class,
+        ];
+
+        protected function boot(): void
+        {
+            app()->instance('test.transport', $this->transport);
+        }
+    };
+
+    $server->start();
+
+    ($transport->handler)(json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 567,
+        'method' => 'cancel/throw',
+        'params' => [],
+    ]));
+
+    expect($transport->sent)->toHaveCount(0);
+});
+
 it('stops streaming responses after cancellation is observed', function (): void {
     $transport = new ArrayTransport;
 
@@ -448,6 +475,26 @@ class ObservesCancellationMethod implements Method
         $observed->data['reason'] = $cancellation->reason();
 
         return JsonRpcResponse::result($request->id, ['ok' => true]);
+    }
+}
+
+class ThrowsAfterCancellationMethod implements Method
+{
+    public function handle(JsonRpcRequest $request, ServerContext $context): JsonRpcResponse
+    {
+        /** @var ArrayTransport $transport */
+        $transport = app('test.transport');
+
+        ($transport->handler)(json_encode([
+            'jsonrpc' => '2.0',
+            'method' => 'notifications/cancelled',
+            'params' => [
+                'requestId' => $request->id,
+                'reason' => 'No longer needed',
+            ],
+        ]));
+
+        throw new Exception('This should be suppressed.');
     }
 }
 

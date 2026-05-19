@@ -22,7 +22,7 @@ class JsonRpcRequest
     }
 
     /**
-     * @param  array{id: mixed, jsonrpc?: mixed, method?: mixed, params?: array<string, mixed>}  $jsonRequest
+     * @param  array{id: mixed, jsonrpc?: mixed, method?: mixed, params?: mixed}  $jsonRequest
      *
      * @throws JsonRpcException
      */
@@ -45,7 +45,7 @@ class JsonRpcRequest
         return new static(
             id: $requestId,
             method: $jsonRequest['method'],
-            params: $jsonRequest['params'] ?? [],
+            params: JsonRpcParams::from($jsonRequest['params'] ?? null, $requestId),
             sessionId: $sessionId,
         );
     }

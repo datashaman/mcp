@@ -57,3 +57,15 @@ it('throws exception for non string method in notification', function (): void {
         'method' => 123,
     ]);
 });
+
+it('throws exception for non array params in notification', function (): void {
+    $this->expectException(JsonRpcException::class);
+    $this->expectExceptionMessage('Invalid Request: The [params] member must be an object or array.');
+    $this->expectExceptionCode(-32600);
+
+    JsonRpcNotification::from([
+        'jsonrpc' => '2.0',
+        'method' => 'notifications/initialized',
+        'params' => 'invalid',
+    ]);
+});

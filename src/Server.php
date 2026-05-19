@@ -297,6 +297,12 @@ abstract class Server
         try {
             $response = $this->runMethodHandle($request, $context);
         } catch (Throwable $throwable) {
+            if ($cancellation->cancelled($request->id)) {
+                $cancellation->finish($request->id);
+
+                return;
+            }
+
             $cancellation->finish($request->id);
 
             throw $throwable;

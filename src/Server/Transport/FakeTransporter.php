@@ -72,6 +72,29 @@ class FakeTransporter implements Transport
     }
 
     /**
+     * Queue a JSON-RPC error to be returned by the next sendRequest() call.
+     *
+     * @param  array<string, mixed>|null  $data
+     */
+    public function expectError(int $code, string $message, ?array $data = null): void
+    {
+        $error = [
+            'code' => $code,
+            'message' => $message,
+        ];
+
+        if ($data !== null) {
+            $error['data'] = $data;
+        }
+
+        $this->queuedResponses[] = (string) json_encode([
+            'jsonrpc' => '2.0',
+            'id' => '_placeholder_',
+            'error' => $error,
+        ]);
+    }
+
+    /**
      * Queue an elicitation JSON-RPC result to be returned by the next sendRequest() call.
      *
      * @param  array<string, mixed>  $result

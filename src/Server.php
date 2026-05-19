@@ -32,6 +32,8 @@ use Laravel\Mcp\Server\Methods\ReadResource;
 use Laravel\Mcp\Server\Notifications\ProgressNotification;
 use Laravel\Mcp\Server\Prompt;
 use Laravel\Mcp\Server\Resource;
+use Laravel\Mcp\Server\Roots\Events\RootsListChanged;
+use Laravel\Mcp\Server\Roots\Roots;
 use Laravel\Mcp\Server\Sampling\Sampling;
 use Laravel\Mcp\Server\ServerContext;
 use Laravel\Mcp\Server\ServerNotification;
@@ -63,6 +65,8 @@ abstract class Server
     public const CAPABILITY_SAMPLING = 'sampling';
 
     public const CAPABILITY_ELICITATION = 'elicitation';
+
+    public const CAPABILITY_ROOTS = 'roots';
 
     public const CAPABILITY_UI = 'io.modelcontextprotocol/ui';
 
@@ -347,6 +351,15 @@ abstract class Server
 
     protected function handleNotification(JsonRpcNotification $notification): void
     {
+        if ($notification->method === 'notifications/roots/list_changed') {
+            Container::getInstance()->make('events')->dispatch(new RootsListChanged(
+                params: $notification->params,
+                sessionId: $this->transport->sessionId(),
+            ));
+
+            return;
+        }
+
         if ($notification->method !== 'notifications/cancelled') {
             return;
         }
@@ -395,6 +408,13 @@ abstract class Server
         );
         $container->instance(Elicitation::class, $elicitation);
 
+        $roots = new Roots(
+            $this->transport,
+            $this->resolveClientCapabilities(),
+            $this->resolveProtocolVersion($context),
+        );
+        $container->instance(Roots::class, $roots);
+
         $container->instance(ProgressNotification::class, new ProgressNotification($this->transport));
 
         try {
@@ -403,6 +423,7 @@ abstract class Server
             $container->forgetInstance('mcp.request');
             $container->forgetInstance(Sampling::class);
             $container->forgetInstance(Elicitation::class);
+            $container->forgetInstance(Roots::class);
             $container->forgetInstance(ProgressNotification::class);
         }
 

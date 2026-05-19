@@ -48,7 +48,7 @@ class Sampling extends ClientRequest
             $params['systemPrompt'] = $systemPrompt;
         }
 
-        if ($modelPreferences !== null && ($preferences = $modelPreferences->toArray()) !== []) {
+        if ($modelPreferences instanceof ModelPreferences && ($preferences = $modelPreferences->toArray()) !== []) {
             $params['modelPreferences'] = $preferences;
         }
 

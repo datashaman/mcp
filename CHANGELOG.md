@@ -2,6 +2,9 @@
 
 ## [Unreleased](https://github.com/laravel/mcp/compare/v0.7.0...main)
 
+* Add shared server-to-client request support for sampling and elicitation.
+* Add progress notifications over the shared server notification transport.
+
 ## [v0.7.0](https://github.com/laravel/mcp/compare/v0.6.7...v0.7.0) - 2026-04-21
 
 * docs(readme): point test badge to workflow file URL by [@Gujiassh](https://github.com/Gujiassh) in https://github.com/laravel/mcp/pull/201

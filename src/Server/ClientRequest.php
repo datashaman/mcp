@@ -21,6 +21,8 @@ use Laravel\Mcp\Transport\JsonRpcResponse;
  */
 abstract class ClientRequest
 {
+    protected ?string $lastRequestId = null;
+
     /**
      * @param  array<string, mixed>|null  $clientCapabilities
      */
@@ -43,6 +45,7 @@ abstract class ClientRequest
     protected function request(string $method, array $params): array
     {
         $id = Str::uuid()->toString();
+        $this->lastRequestId = $id;
 
         $rawResponse = $this->transport->sendRequest(
             JsonRpcResponse::request($id, $method, $params)->toJson(),
@@ -66,6 +69,11 @@ abstract class ClientRequest
         }
 
         return is_array($response['result'] ?? null) ? $response['result'] : [];
+    }
+
+    protected function lastRequestId(): ?string
+    {
+        return $this->lastRequestId;
     }
 
     /**

@@ -71,6 +71,16 @@ class FakeTransporter implements Transport
         ]);
     }
 
+    /**
+     * Queue an elicitation JSON-RPC result to be returned by the next sendRequest() call.
+     *
+     * @param  array<string, mixed>  $result
+     */
+    public function expectElicitation(array $result): void
+    {
+        $this->expectResponse($result);
+    }
+
     public function sendRequest(string $message): string
     {
         $request = json_decode($message, true);
@@ -97,6 +107,17 @@ class FakeTransporter implements Transport
     public function sentRequests(): array
     {
         return $this->sentRequests;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function sentElicitations(): array
+    {
+        return array_values(array_filter(
+            $this->sentRequests,
+            static fn (array $request): bool => ($request['method'] ?? null) === 'elicitation/create',
+        ));
     }
 
     /**

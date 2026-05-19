@@ -17,6 +17,7 @@ use Laravel\Mcp\Server\ClientRequest;
 use Laravel\Mcp\Server\Concerns\ReadsAttributes;
 use Laravel\Mcp\Server\Contracts\Method;
 use Laravel\Mcp\Server\Contracts\Transport;
+use Laravel\Mcp\Server\Elicitation\Elicitation;
 use Laravel\Mcp\Server\Methods\CallTool;
 use Laravel\Mcp\Server\Methods\CompletionComplete;
 use Laravel\Mcp\Server\Methods\GetPrompt;
@@ -27,6 +28,7 @@ use Laravel\Mcp\Server\Methods\ListResourceTemplates;
 use Laravel\Mcp\Server\Methods\ListTools;
 use Laravel\Mcp\Server\Methods\Ping;
 use Laravel\Mcp\Server\Methods\ReadResource;
+use Laravel\Mcp\Server\Notifications\ProgressNotification;
 use Laravel\Mcp\Server\Prompt;
 use Laravel\Mcp\Server\Resource;
 use Laravel\Mcp\Server\Sampling\Sampling;
@@ -58,6 +60,8 @@ abstract class Server
     public const CAPABILITY_COMPLETIONS = 'completions';
 
     public const CAPABILITY_SAMPLING = 'sampling';
+
+    public const CAPABILITY_ELICITATION = 'elicitation';
 
     public const CAPABILITY_UI = 'io.modelcontextprotocol/ui';
 
@@ -319,11 +323,22 @@ abstract class Server
         );
         $container->instance(Sampling::class, $sampling);
 
+        $elicitation = new Elicitation(
+            $this->transport,
+            $this->resolveClientCapabilities(),
+            $this->resolveProtocolVersion($context),
+        );
+        $container->instance(Elicitation::class, $elicitation);
+
+        $container->instance(ProgressNotification::class, new ProgressNotification($this->transport));
+
         try {
             $response = $methodClass->handle($request, $context);
         } finally {
             $container->forgetInstance('mcp.request');
             $container->forgetInstance(Sampling::class);
+            $container->forgetInstance(Elicitation::class);
+            $container->forgetInstance(ProgressNotification::class);
         }
 
         return $response;
